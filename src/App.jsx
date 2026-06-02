@@ -846,6 +846,7 @@ function mapCertificateSubmissionRecord(record) {
 function App() {
   const [state, setState] = useState(defaultState);
   const [searchQuery, setSearchQuery] = useState("");
+  const [adminUserSearchQuery, setAdminUserSearchQuery] = useState("");
   const [activeAnnouncement, setActiveAnnouncement] = useState(0);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "Applicant" });
   const [authFeedback, setAuthFeedback] = useState("");
@@ -917,29 +918,7 @@ function App() {
       if (cancelled) return;
 
       if (profileRecord?.status === "Suspended") {
-        await supabase.auth.signOut();
-
-        if (cancelled) return;
-
-        setAuthFeedback("This account has been suspended. Please contact support or an administrator for assistance.");
-        setState((current) => ({
-          ...current,
-          authModalOpen: true,
-          authMode: "login",
-          activeSidebar: "discover",
-          auth: {
-            ...current.auth,
-            isAuthenticated: false,
-            accountId: "",
-            accountName: "",
-            accountEmail: profileRecord.email || session.user.email || "",
-            accountRole: "Applicant",
-            password: "",
-          },
-          profile: guestProfile,
-          profileCertificates: [],
-          adminCertifications: [],
-        }));
+        await handleSuspendedAccount(profileRecord.email || session.user.email || "");
         return;
       }
 
@@ -1058,6 +1037,65 @@ function App() {
       cancelled = true;
     };
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !supabase || !state.auth.isAuthenticated || !state.auth.accountId) return;
+
+    let active = true;
+
+    async function checkCurrentUserStatus() {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("status, email")
+        .eq("id", state.auth.accountId)
+        .maybeSingle();
+
+      if (!active || error || !data) return;
+
+      if (data.status === "Suspended") {
+        await handleSuspendedAccount(data.email || state.auth.accountEmail || "");
+      }
+    }
+
+    const channel = supabase
+      .channel(`profile-status-${state.auth.accountId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "profiles",
+          filter: `id=eq.${state.auth.accountId}`,
+        },
+        async (payload) => {
+          if (payload.new?.status === "Suspended") {
+            await handleSuspendedAccount(payload.new?.email || state.auth.accountEmail || "");
+          }
+        },
+      )
+      .subscribe();
+
+    checkCurrentUserStatus().catch(() => {});
+
+    const intervalId = window.setInterval(() => {
+      checkCurrentUserStatus().catch(() => {});
+    }, 15000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        checkCurrentUserStatus().catch(() => {});
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      supabase.removeChannel(channel);
+    };
+  }, [state.auth.accountEmail, state.auth.accountId, state.auth.isAuthenticated]);
 
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase || !state.auth.accountId) return;
@@ -1361,6 +1399,19 @@ function App() {
   const currentSidebarItems = isAdmin ? adminSidebarItems : sidebarItems;
   const profileTabs = isAdmin ? adminProfileTabs : applicantProfileTabs;
   const registeredAdminUsers = state.adminUsers.filter((item) => item.role !== "Admin");
+  const filteredAdminUsers = useMemo(() => {
+    const normalized = adminUserSearchQuery.trim().toLowerCase();
+
+    if (!normalized) return registeredAdminUsers;
+
+    return registeredAdminUsers.filter((item) =>
+      [item.name, item.email, item.role, item.title, item.location, item.username]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(normalized),
+    );
+  }, [adminUserSearchQuery, registeredAdminUsers]);
   const selectedAdminUser = registeredAdminUsers.find((item) => item.id === state.selectedAdminUserId) ?? null;
   const selectedAdminCertification = state.adminCertifications.find((item) => item.id === state.selectedAdminCertificationId) ?? null;
   const adminOverview = {
@@ -1422,6 +1473,32 @@ function App() {
 
   function patchPasswordForm(field, value) {
     setPasswordForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleSuspendedAccount(email = "") {
+    if (hasSupabaseConfig && supabase) {
+      await supabase.auth.signOut();
+    }
+
+    setAuthFeedback("This account has been suspended. Please contact support or an administrator for assistance.");
+    setState((current) => ({
+      ...current,
+      authModalOpen: true,
+      authMode: "login",
+      activeSidebar: "discover",
+      auth: {
+        ...current.auth,
+        isAuthenticated: false,
+        accountId: "",
+        accountName: "",
+        accountEmail: email || current.auth.accountEmail || "",
+        accountRole: "Applicant",
+        password: "",
+      },
+      profile: guestProfile,
+      profileCertificates: [],
+      adminCertifications: [],
+    }));
   }
 
   async function loadAdminUsers(cancelled = false) {
@@ -1639,6 +1716,8 @@ function App() {
   }
 
   async function updateAdminUserStatus(userId, nextStatus) {
+    const currentStatus = state.adminUsers.find((item) => item.id === userId)?.status ?? "";
+
     setState((current) => ({
       ...current,
       adminUserActionId: userId,
@@ -1662,7 +1741,14 @@ function App() {
       await loadAdminUsers();
     }
 
-    setAuthFeedback(`User ${nextStatus === "Active" ? "verified" : "suspended"} successfully.`);
+    const feedbackMessage =
+      nextStatus === "Suspended"
+        ? "User suspended successfully."
+        : currentStatus === "Suspended"
+          ? "User unsuspended successfully."
+          : "User verified successfully.";
+
+    setAuthFeedback(feedbackMessage);
     setState((current) => ({
       ...current,
       adminUserActionId: "",
@@ -2537,8 +2623,18 @@ function App() {
               </div>
             </div>
 
+            <label className="listing-search" htmlFor="admin-user-search">
+              <Search size={17} />
+              <input
+                id="admin-user-search"
+                value={adminUserSearchQuery}
+                onChange={(event) => setAdminUserSearchQuery(event.target.value)}
+                placeholder="Search users by name, email, role, or title..."
+              />
+            </label>
+
             <div className="progress-card-list">
-              {registeredAdminUsers.map((item) => (
+              {filteredAdminUsers.map((item) => (
                 <article key={item.id} className="progress-card interactive-card" onClick={() => openAdminUserDetails(item.id)}>
                   <div className="application-top">
                     <div className="listing-avatar violet">{item.name.slice(0, 1)}</div>
@@ -2563,19 +2659,21 @@ function App() {
                         {state.adminUserActionId === item.id ? "Updating..." : "Verify"}
                       </button>
                     ) : null}
-                    {item.status !== "Suspended" ? (
-                      <button
-                        className="ghost-action"
-                        type="button"
-                        disabled={state.adminUserActionId === item.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          updateAdminUserStatus(item.id, "Suspended");
-                        }}
-                      >
-                        {state.adminUserActionId === item.id ? "Updating..." : "Suspend"}
-                      </button>
-                    ) : null}
+                    <button
+                      className="ghost-action"
+                      type="button"
+                      disabled={state.adminUserActionId === item.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateAdminUserStatus(item.id, item.status === "Suspended" ? "Active" : "Suspended");
+                      }}
+                    >
+                      {state.adminUserActionId === item.id
+                        ? "Updating..."
+                        : item.status === "Suspended"
+                          ? "Unsuspend"
+                          : "Suspend"}
+                    </button>
                   </div>
                 </article>
               ))}
@@ -2583,6 +2681,11 @@ function App() {
                 <div className="empty-feed">
                   <h3>No registered users to review</h3>
                   <p>Verified and suspended user accounts will appear here for admin action.</p>
+                </div>
+              ) : filteredAdminUsers.length === 0 ? (
+                <div className="empty-feed">
+                  <h3>No users matched your search</h3>
+                  <p>Try a different name, email, role, title, or location.</p>
                 </div>
               ) : null}
             </div>
@@ -4524,20 +4627,23 @@ function App() {
                       User Verified
                     </button>
                   )}
-                  {selectedAdminUser.status !== "Suspended" ? (
-                    <button
-                      className="profile-danger-button"
-                      type="button"
-                      disabled={state.adminUserActionId === selectedAdminUser.id}
-                      onClick={() => updateAdminUserStatus(selectedAdminUser.id, "Suspended")}
-                    >
-                      {state.adminUserActionId === selectedAdminUser.id ? "Updating..." : "Suspend User"}
-                    </button>
-                  ) : (
-                    <button className="profile-danger-button" type="button" disabled>
-                      Suspended
-                    </button>
-                  )}
+                  <button
+                    className="profile-danger-button"
+                    type="button"
+                    disabled={state.adminUserActionId === selectedAdminUser.id}
+                    onClick={() =>
+                      updateAdminUserStatus(
+                        selectedAdminUser.id,
+                        selectedAdminUser.status === "Suspended" ? "Active" : "Suspended",
+                      )
+                    }
+                  >
+                    {state.adminUserActionId === selectedAdminUser.id
+                      ? "Updating..."
+                      : selectedAdminUser.status === "Suspended"
+                        ? "Unsuspend User"
+                        : "Suspend User"}
+                  </button>
                 </div>
               </div>
             </div>
