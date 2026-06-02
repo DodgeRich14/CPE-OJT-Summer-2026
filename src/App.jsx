@@ -30,8 +30,8 @@ import {
 import { fetchLiveJobs, fetchRecommendedJobs, parseResumeProfile } from "./lib/ai";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
-const STORAGE_KEY = "stepbridge-career-studio";
-const DEMO_ACCOUNT_EMAIL = "justine.alonzo@student.stepbridge.ph";
+const STORAGE_KEY = "skillbridge-career-studio";
+const DEMO_ACCOUNT_EMAIL = "justine.alonzo@student.skillbridge.ph";
 const applicationStages = ["Applied", "Reviewed", "Shortlisted", "Interview", "Offer"];
 
 const sidebarItems = [
@@ -631,17 +631,17 @@ function createBaseUserProfile(role) {
 }
 
 const adminProfile = {
-  fullName: "Stepbridge Admin",
-  username: "@stepbridge.admin",
+  fullName: "SkillBridge Admin",
+  username: "@skillbridge.admin",
   role: "Admin",
-  email: "admin@stepbridge.ph",
+  email: "admin@skillbridge.ph",
   avatarUrl: "",
-  firstName: "Stepbridge",
+  firstName: "SkillBridge",
   lastName: "Admin",
   jobTitle: "Platform Administrator",
   location: "Manila, PH",
-  portfolio: "admin.stepbridge.ph",
-  about: "Platform administrator handling approvals, verifications, content operations, and marketplace health across the Stepbridge ecosystem.",
+  portfolio: "admin.skillbridge.ph",
+  about: "Platform administrator handling approvals, verifications, content operations, and marketplace health across the SkillBridge ecosystem.",
   skills: ["Operations", "Verification", "Analytics", "Content Review"],
   linkedIn: "",
   resumeFileName: "Admin_Operations_Profile.pdf",
@@ -2485,7 +2485,7 @@ function App() {
             <div className="sidebar-brand-mark">
               <Sparkles size={14} />
             </div>
-            <span>Stepbridge</span>
+            <span>SkillBridge</span>
           </div>
 
           <nav className="sidebar-nav">
@@ -4303,7 +4303,7 @@ function App() {
                         ? "Send a secure reset link to your email"
                         : state.authMode === "reset"
                           ? "Choose a new password for your account"
-                          : "Access your Stepbridge profile"}
+                          : "Access your SkillBridge profile"}
                   </span>
                 </div>
               </div>
