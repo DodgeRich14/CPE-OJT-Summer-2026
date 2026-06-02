@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700;900&family=Inter:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap");
 
 :root {
   color-scheme: dark;
@@ -34,6 +34,9 @@
   --input-bg: rgba(25, 31, 45, 0.55);
   --track: rgba(255, 255, 255, 0.08);
   --inset-shadow: rgba(10, 14, 22, 0.92);
+  --section-padding: clamp(24px, 3vw, 30px);
+  --card-padding: clamp(22px, 2.5vw, 26px);
+  --compact-padding: 18px;
 }
 
 .theme-light {
@@ -81,7 +84,9 @@ body,
 
 body {
   margin: 0;
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
   color: var(--text);
   background: var(--bg);
 }
@@ -126,20 +131,17 @@ button {
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 2px 6px 28px;
-  font-size: 1.2rem;
-  font-weight: 400;
+  justify-content: center;
+  margin: 0 6px 30px;
 }
 
-.sidebar-brand-mark {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 11px;
-  color: white;
-  background: linear-gradient(135deg, #7a72ff, #5b64ff);
+.sidebar-brand-logo {
+  display: block;
+  width: min(172px, 100%);
+  height: auto;
+  border-radius: 10px;
+  object-fit: contain;
+  overflow: hidden;
 }
 
 .sidebar-nav {
@@ -381,9 +383,9 @@ button {
 
 .applications-head h1 {
   margin: 0;
-  font-family: "Playfair Display", serif;
-  font-size: 2.4rem;
-  line-height: 1.04;
+  font-family: "Inter", sans-serif;
+  font-size: 2rem;
+  line-height: 1.1;
   letter-spacing: 0;
 }
 
@@ -435,7 +437,7 @@ button {
   color: var(--accent-chip);
   background: rgba(112, 103, 255, 0.12);
   font-size: 0.74rem;
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
 }
 
 .applications-tab.active {
@@ -458,15 +460,15 @@ button {
 }
 
 .summary-card {
-  padding: 20px;
+  padding: var(--card-padding);
   text-align: center;
 }
 
 .summary-card strong {
   display: block;
   margin-bottom: 6px;
-  font-family: "DM Mono", monospace;
-  font-size: 1.55rem;
+  font-family: "Inter", sans-serif;
+  font-size: 1.32rem;
 }
 
 .summary-card span {
@@ -511,7 +513,7 @@ button {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 20px;
-  padding: 20px;
+  padding: var(--card-padding);
 }
 
 .progress-card.completed,
@@ -534,7 +536,7 @@ button {
 
 .progress-title {
   margin: 0 0 14px;
-  font-size: 1.35rem;
+  font-size: 1.18rem;
 }
 
 .progress-meta-line {
@@ -543,7 +545,7 @@ button {
   gap: 12px;
   margin-bottom: 8px;
   color: var(--muted);
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.78rem;
 }
 
@@ -578,7 +580,7 @@ button {
 .assessment-block p {
   margin: 0 0 12px;
   color: var(--label-text);
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -616,7 +618,7 @@ button {
 }
 
 .assessment-bar-wrap strong {
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.74rem;
 }
 
@@ -647,7 +649,7 @@ button {
   border-radius: 8px;
   background: rgba(112, 103, 255, 0.08);
   color: var(--muted);
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.68rem;
 }
 
@@ -730,7 +732,7 @@ button {
   justify-content: space-between;
   gap: 16px;
   align-items: flex-start;
-  padding: 18px;
+  padding: var(--card-padding);
 }
 
 .roadmap-labels {
@@ -757,11 +759,11 @@ button {
 
 .roadmap-card h3 {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1.14rem;
 }
 
 .roadmap-body {
-  padding: 0 18px 18px;
+  padding: 0 var(--card-padding) var(--card-padding);
   border-top: 1px solid rgba(92, 101, 144, 0.14);
 }
 
@@ -772,7 +774,7 @@ button {
 .roadmap-section-block p {
   margin: 0 0 12px;
   color: var(--label-text);
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -813,7 +815,7 @@ button {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 20px;
-  padding: 20px;
+  padding: var(--card-padding);
 }
 
 .mentor-head {
@@ -861,7 +863,7 @@ button {
 }
 
 .mentor-badges-price strong {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
 }
 
 .mentor-info-grid {
@@ -970,7 +972,7 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 20px;
+  padding: 22px 24px;
   border-bottom: 1px solid rgba(92, 101, 144, 0.18);
 }
 
@@ -978,6 +980,11 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+}
+
+.profile-panel-user > div:last-child {
+  min-width: 0;
 }
 
 .sidebar-avatar.large {
@@ -987,12 +994,15 @@ button {
 
 .profile-panel-user strong {
   display: block;
-  font-size: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.35;
   letter-spacing: 0;
 }
 
 .profile-panel-user span {
+  display: block;
   color: var(--muted);
+  line-height: 1.45;
 }
 
 .profile-close {
@@ -1039,7 +1049,7 @@ button {
 }
 
 .profile-panel-body {
-  padding: 0 18px 18px;
+  padding: 20px 24px 24px;
 }
 
 .profile-section-stack {
@@ -1084,13 +1094,13 @@ button {
 }
 
 .profile-role-box {
-  padding: 14px;
+  padding: var(--compact-padding);
 }
 
 .profile-role-box strong {
   display: block;
   margin-bottom: 6px;
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .profile-role-box span {
@@ -1125,7 +1135,7 @@ button {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 12px;
+  padding: 0 16px;
 }
 
 .profile-input-wrap svg {
@@ -1156,7 +1166,7 @@ button {
 
 .profile-field textarea {
   min-height: 118px;
-  padding: 14px;
+  padding: var(--compact-padding);
   resize: vertical;
 }
 
@@ -1166,7 +1176,7 @@ button {
 }
 
 .profile-empty-card {
-  padding: 14px;
+  padding: var(--compact-padding);
   border: 1px dashed rgba(92, 101, 144, 0.28);
   border-radius: 14px;
   color: var(--muted);
@@ -1183,7 +1193,7 @@ button {
   position: relative;
   display: grid;
   gap: 8px;
-  padding: 14px;
+  padding: var(--compact-padding);
   border: 1px dashed rgba(92, 101, 144, 0.28);
   border-radius: 14px;
   color: var(--muted);
@@ -1232,14 +1242,14 @@ button {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px;
+  padding: var(--compact-padding);
   border-radius: 14px;
   background: var(--panel-soft);
 }
 
 .profile-mini-card strong {
   display: block;
-  font-size: 1rem;
+  font-size: 0.95rem;
 }
 
 .profile-mini-card p {
@@ -1292,7 +1302,7 @@ button {
 }
 
 .skill-box {
-  padding: 12px;
+  padding: var(--compact-padding);
 }
 
 .skill-chip-list {
@@ -1330,7 +1340,7 @@ button {
   display: grid;
   justify-items: center;
   gap: 8px;
-  padding: 24px 18px;
+  padding: var(--section-padding);
   border: 2px dashed rgba(103, 98, 223, 0.45);
   border-radius: 18px;
   text-align: center;
@@ -1354,7 +1364,7 @@ button {
 }
 
 .resume-dropzone strong {
-  font-size: 1.15rem;
+  font-size: 1rem;
 }
 
 .resume-dropzone p {
@@ -1370,7 +1380,7 @@ button {
 }
 
 .resume-current-card {
-  padding: 14px;
+  padding: var(--compact-padding);
   border-color: rgba(17, 216, 161, 0.28);
   background: rgba(17, 216, 161, 0.12);
 }
@@ -1388,7 +1398,7 @@ button {
 .resume-ai-card {
   display: grid;
   gap: 12px;
-  padding: 14px;
+  padding: var(--compact-padding);
   border: 1px solid rgba(92, 101, 144, 0.2);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(112, 103, 255, 0.08), rgba(18, 217, 162, 0.05));
@@ -1439,7 +1449,7 @@ button {
 }
 
 .application-card.compact {
-  padding: 18px;
+  padding: var(--card-padding);
 }
 
 .application-top {
@@ -1447,12 +1457,13 @@ button {
   grid-template-columns: auto 1fr auto;
   gap: 12px;
   align-items: center;
-  padding: 18px;
+  padding: var(--card-padding);
 }
 
 .application-copy h3 {
   margin: 0;
-  font-size: 1.55rem;
+  font-size: 1.24rem;
+  line-height: 1.2;
 }
 
 .application-copy p,
@@ -1475,7 +1486,7 @@ button {
 .status-badge {
   padding: 4px 8px;
   border-radius: 999px;
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.67rem;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1534,7 +1545,7 @@ button {
 }
 
 .application-details {
-  padding: 0 18px 18px;
+  padding: 0 var(--card-padding) var(--card-padding);
   border-top: 1px solid rgba(92, 101, 144, 0.14);
 }
 
@@ -1573,7 +1584,7 @@ button {
   margin-top: 4px;
   color: var(--muted);
   font-size: 0.68rem;
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
 }
 
 .stage-dot {
@@ -1611,7 +1622,7 @@ button {
 }
 
 .ghost-action {
-  padding: 14px;
+  padding: 16px;
   border: 1px solid rgba(92, 101, 144, 0.18);
   border-radius: 14px;
   color: var(--muted-soft);
@@ -1624,7 +1635,7 @@ button {
   gap: 8px;
   margin-bottom: 16px;
   color: var(--accent-strong);
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.73rem;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -1652,7 +1663,7 @@ button {
   display: grid;
   grid-template-columns: auto 1fr auto;
   gap: 18px;
-  padding: 20px;
+  padding: var(--card-padding);
 }
 
 .announcement-icon {
@@ -1680,7 +1691,7 @@ button {
   border-radius: 8px;
   color: var(--accent-chip);
   background: rgba(112, 103, 255, 0.12);
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.67rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -1690,8 +1701,8 @@ button {
 .listing-copy h3,
 .empty-feed h3 {
   margin: 0;
-  font-size: 1.26rem;
-  line-height: 1.15;
+  font-size: 1.1rem;
+  line-height: 1.25;
   font-weight: 400;
 }
 
@@ -1742,7 +1753,7 @@ button {
   display: grid;
   gap: 14px;
   margin-bottom: 16px;
-  padding: 18px;
+  padding: var(--card-padding);
   border: 1px solid var(--border);
   border-radius: 20px;
   background:
@@ -1760,13 +1771,20 @@ button {
 
 .ai-studio-head h3 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.08rem;
 }
 
 .ai-studio-head p {
   margin: 8px 0 0;
   color: var(--muted);
   line-height: 1.55;
+}
+
+.ai-refresh-button {
+  flex-shrink: 0;
+  min-width: 156px;
+  white-space: nowrap;
+  text-align: center;
 }
 
 .ai-studio-status {
@@ -1793,7 +1811,7 @@ button {
 .ai-recommendation-pill {
   display: grid;
   gap: 6px;
-  padding: 14px;
+  padding: var(--compact-padding);
   border: 1px solid rgba(92, 101, 144, 0.18);
   border-radius: 16px;
   text-align: left;
@@ -1821,7 +1839,7 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 18px;
+  padding: 18px 20px;
   border: 1px solid var(--border-soft);
   border-radius: 18px;
   color: var(--muted);
@@ -1869,7 +1887,7 @@ button {
   color: var(--accent-chip);
   background: rgba(112, 103, 255, 0.12);
   font-size: 0.74rem;
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
 }
 
 .category-chip.active {
@@ -1880,7 +1898,7 @@ button {
 .listing-caption {
   margin: 16px 0 14px;
   color: var(--label-text);
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   font-size: 0.75rem;
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -1892,7 +1910,7 @@ button {
 }
 
 .listing-card {
-  padding: 18px 18px 16px;
+  padding: var(--card-padding);
 }
 
 .listing-ai-reason {
@@ -1918,8 +1936,9 @@ button {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  font-family: "DM Mono", monospace;
-  font-size: 0.7rem;
+  font-family: "Inter", sans-serif;
+  font-size: 0.8rem;
+  font-weight: 600;
 }
 
 .listing-avatar {
@@ -1942,7 +1961,7 @@ button {
 }
 
 .listing-copy h3 {
-  font-size: 1.12rem;
+  font-size: 1.02rem;
 }
 
 .listing-copy p,
@@ -1957,8 +1976,8 @@ button {
 }
 
 .listing-score {
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
   border: 1px solid currentColor;
   box-shadow: inset 0 0 0 4px var(--inset-shadow);
 }
@@ -1971,7 +1990,7 @@ button {
   padding-bottom: 14px;
   border-bottom: 1px solid rgba(92, 101, 144, 0.14);
   font-size: 0.82rem;
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
 }
 
 .listing-meta-row .danger {
@@ -1995,7 +2014,7 @@ button {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid rgba(112, 103, 255, 0.22);
   color: var(--accent-text);
   background: rgba(112, 103, 255, 0.12);
@@ -2081,7 +2100,16 @@ button {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 16px;
+  gap: 20px;
+}
+
+.job-modal .profile-panel-header {
+  align-items: flex-start;
+  padding-bottom: 24px;
+}
+
+.job-modal .profile-close {
+  flex-shrink: 0;
 }
 
 .job-modal-meta {
@@ -2100,7 +2128,7 @@ button {
 .auth-overlay {
   justify-content: center;
   align-items: center;
-  padding: 24px;
+  padding: var(--section-padding);
 }
 
 .auth-panel {
@@ -2126,7 +2154,7 @@ button {
 }
 
 .auth-role-button {
-  padding: 12px 14px;
+  padding: 14px 16px;
   border: 1px solid rgba(92, 101, 144, 0.18);
   border-radius: 14px;
   color: var(--muted);
@@ -2154,7 +2182,7 @@ button {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 12px 14px;
+  padding: var(--compact-padding);
   border: 1px solid rgba(92, 101, 144, 0.16);
   border-radius: 14px;
   background: var(--panel-soft);
@@ -2177,7 +2205,7 @@ button {
 }
 
 .empty-feed {
-  padding: 24px 18px;
+  padding: var(--section-padding);
 }
 
 .empty-feed p {

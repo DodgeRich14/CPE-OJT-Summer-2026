@@ -171,8 +171,7 @@ export async function fetchRecommendedJobs(payload) {
       .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
       .eq("status", "Open")
       .eq("review_status", "Approved")
-      .order("posted_at", { ascending: false })
-      .limit(24);
+      .order("posted_at", { ascending: false });
 
     if (jobsError) {
       throw new Error(error.message || jobsError.message || "Job recommendation failed.");
@@ -187,8 +186,7 @@ export async function fetchRecommendedJobs(payload) {
       .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
       .eq("status", "Open")
       .eq("review_status", "Approved")
-      .order("posted_at", { ascending: false })
-      .limit(24);
+      .order("posted_at", { ascending: false });
 
     if (jobsError) {
       throw new Error(data.error);
@@ -200,7 +198,7 @@ export async function fetchRecommendedJobs(payload) {
   return data;
 }
 
-export async function fetchLiveJobs(limit = 18) {
+export async function fetchLiveJobs() {
   ensureSupabase();
 
   const { data, error } = await supabase
@@ -208,8 +206,7 @@ export async function fetchLiveJobs(limit = 18) {
     .select("*")
     .eq("status", "Open")
     .eq("review_status", "Approved")
-    .order("posted_at", { ascending: false })
-    .limit(limit);
+    .order("posted_at", { ascending: false });
 
   if (error) {
     throw new Error(error.message || "Failed to load jobs.");

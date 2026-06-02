@@ -19,7 +19,6 @@ import {
   Plus,
   Search,
   ShieldCheck,
-  Sparkles,
   SquareArrowOutUpRight,
   Star,
   Upload,
@@ -2528,10 +2527,7 @@ function App() {
       <aside className="dashboard-sidebar">
         <div>
           <div className="sidebar-brand">
-            <div className="sidebar-brand-mark">
-              <Sparkles size={14} />
-            </div>
-            <span>SkillBridge</span>
+            <img src="/skillbridge-logo.png" alt="SkillBridge" className="sidebar-brand-logo" />
           </div>
 
           <nav className="sidebar-nav">
@@ -3120,7 +3116,7 @@ function App() {
                     </p>
                   </div>
                   <button
-                    className="profile-primary-button small"
+                    className="profile-primary-button small ai-refresh-button"
                     type="button"
                     onClick={() => refreshRecommendations().catch(() => {})}
                     disabled={state.aiStatus.refreshingRecommendations || state.aiStatus.analyzingResume || !state.profile.aiProfile}
