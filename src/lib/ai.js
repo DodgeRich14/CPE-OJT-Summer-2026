@@ -81,6 +81,100 @@ function dedupeSkills(values) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
+const fallbackJobSkillDictionary = [
+  "react",
+  "typescript",
+  "javascript",
+  "node.js",
+  "node",
+  "sql",
+  "postgresql",
+  "mysql",
+  "firebase",
+  "tailwind",
+  "css",
+  "html",
+  "graphql",
+  "next.js",
+  "next",
+  "aws",
+  "docker",
+  "git",
+  "rest api",
+  "figma",
+  "python",
+  "java",
+  "c#",
+  "php",
+  "laravel",
+  "vue",
+  "angular",
+  "testing",
+  "communication",
+  "teamwork",
+  "customer service",
+  "crm",
+  "sales",
+  "marketing",
+  "social media",
+  "copywriting",
+  "graphic design",
+  "photoshop",
+  "illustrator",
+  "excel",
+  "accounting",
+  "bookkeeping",
+  "payroll",
+  "recruitment",
+  "hr",
+  "administration",
+  "data entry",
+  "documentation",
+  "analytics",
+  "business analysis",
+  "technical support",
+  "network",
+  "embedded",
+  "firmware",
+  "microcontroller",
+  "arduino",
+  "raspberry pi",
+  "robotics",
+  "iot",
+  "linux",
+];
+
+function inferJobSkills(job) {
+  const existingSkills = Array.isArray(job.required_skills) ? job.required_skills.filter(Boolean) : [];
+  if (existingSkills.length > 0) return existingSkills;
+
+  const lowered = [
+    job.title,
+    job.company_name,
+    job.location,
+    job.work_type,
+    job.description,
+    ...(job.responsibilities ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const inferred = fallbackJobSkillDictionary
+    .filter((skill) => lowered.includes(skill))
+    .map((skill) => {
+      if (skill === "node") return "Node.js";
+      if (skill === "next") return "Next.js";
+      if (skill === "hr") return "HR";
+      if (skill === "crm") return "CRM";
+      return skill
+        .split(" ")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+    });
+
+  return dedupeSkills(inferred);
+}
+
 function computeRecommendationFallback(payload, jobs) {
   const profile = payload?.profile ?? {};
   const resumeProfile = payload?.resumeProfile ?? {};
@@ -90,7 +184,7 @@ function computeRecommendationFallback(payload, jobs) {
 
   const recommendations = (jobs ?? [])
     .map((job) => {
-      const requiredSkills = Array.isArray(job.required_skills) ? job.required_skills : [];
+      const requiredSkills = inferJobSkills(job);
       const matchedSkills = requiredSkills.filter((required) =>
         profileSkills.some((skill) => {
           const currentSkill = skill.toLowerCase();
@@ -106,7 +200,7 @@ function computeRecommendationFallback(payload, jobs) {
           job.location,
           job.work_type,
           job.description,
-          ...(job.required_skills ?? []),
+          ...requiredSkills,
           ...(job.responsibilities ?? []),
         ]),
       );
@@ -130,8 +224,7 @@ function computeRecommendationFallback(payload, jobs) {
         reason,
       };
     })
-    .sort((left, right) => right.match_score - left.match_score)
-    .slice(0, 12);
+    .sort((left, right) => right.match_score - left.match_score);
 
   return {
     success: true,

@@ -102,9 +102,95 @@ function normalizeSearchTerms(values) {
     .filter((term) => term.length >= 3);
 }
 
+const listingSkillDictionary = [
+  "react",
+  "typescript",
+  "javascript",
+  "node.js",
+  "node",
+  "sql",
+  "postgresql",
+  "mysql",
+  "firebase",
+  "tailwind",
+  "css",
+  "html",
+  "graphql",
+  "next.js",
+  "next",
+  "aws",
+  "docker",
+  "git",
+  "rest api",
+  "figma",
+  "python",
+  "java",
+  "c#",
+  "php",
+  "laravel",
+  "vue",
+  "angular",
+  "testing",
+  "jest",
+  "cypress",
+  "communication",
+  "teamwork",
+  "customer service",
+  "crm",
+  "sales",
+  "marketing",
+  "social media",
+  "copywriting",
+  "graphic design",
+  "photoshop",
+  "illustrator",
+  "excel",
+  "accounting",
+  "bookkeeping",
+  "payroll",
+  "recruitment",
+  "hr",
+  "administration",
+  "data entry",
+  "documentation",
+  "analytics",
+  "business analysis",
+  "technical support",
+  "network",
+  "embedded",
+  "firmware",
+  "microcontroller",
+  "arduino",
+  "raspberry pi",
+  "robotics",
+  "iot",
+  "linux",
+];
+
+function extractListingSkills(...values) {
+  const lowered = values.join(" ").toLowerCase();
+  const normalized = listingSkillDictionary
+    .filter((skill) => lowered.includes(skill))
+    .map((skill) => {
+      if (skill === "node") return "Node.js";
+      if (skill === "next") return "Next.js";
+      if (skill === "hr") return "HR";
+      if (skill === "crm") return "CRM";
+      return skill
+        .split(" ")
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+    });
+
+  return [...new Set(normalized)];
+}
+
 function computeListingSimilarity(listing, profile, recommendation = null) {
   const profileSkills = Array.isArray(profile.skills) ? profile.skills : [];
-  const requiredSkills = Array.isArray(listing.requiredSkills) ? listing.requiredSkills : [];
+  const requiredSkills =
+    Array.isArray(listing.requiredSkills) && listing.requiredSkills.length > 0
+      ? listing.requiredSkills
+      : extractListingSkills(listing.title, listing.meta, listing.overview, listing.setup, ...(listing.sourceResponsibilities ?? []));
   const matchedSkills =
     recommendation?.matched_skills?.length
       ? recommendation.matched_skills
@@ -1250,7 +1336,10 @@ function App() {
           ],
           posted: formatRelativeDate(job.posted_at),
           applicants: recommendation ? Math.max(9, recommendation.match_score - 20) : 12 + index * 4,
-          requiredSkills: job.required_skills?.length ? job.required_skills : matchedSkills,
+          requiredSkills:
+            job.required_skills?.length
+              ? job.required_skills
+              : extractListingSkills(job.title, job.description, ...(job.responsibilities ?? [])),
           scoreBase: recommendation?.match_score ?? 76,
           gaps: skillGaps,
           accent: accentSequence[index % accentSequence.length],

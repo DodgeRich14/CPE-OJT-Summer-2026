@@ -25,6 +25,14 @@ function dedupe(values: string[]) {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
+function titleCase(value: string) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function overlapCount(a: string[], b: string[]) {
   const left = a.map((item) => item.toLowerCase());
   const right = b.map((item) => item.toLowerCase());
@@ -91,6 +99,30 @@ const nonTechnicalKeywords = [
   "cashier",
 ];
 
+const jobSkillDictionary = [
+  ...technicalKeywords,
+  "customer service",
+  "crm",
+  "sales",
+  "marketing",
+  "social media",
+  "copywriting",
+  "graphic design",
+  "photoshop",
+  "illustrator",
+  "excel",
+  "accounting",
+  "bookkeeping",
+  "payroll",
+  "recruitment",
+  "hr",
+  "administration",
+  "data entry",
+  "documentation",
+  "analytics",
+  "business analysis",
+];
+
 function detectTechnicalFocus(profileSkills: string[], profileText: string) {
   const combined = `${profileSkills.join(" ")} ${profileText}`.toLowerCase();
   return includesAny(combined, technicalKeywords);
@@ -109,6 +141,28 @@ function buildJobSearchText(job: Record<string, unknown>) {
 
 function isClearlyNonTechnical(jobText: string) {
   return includesAny(jobText, nonTechnicalKeywords) && !includesAny(jobText, technicalKeywords);
+}
+
+function inferJobSkills(job: Record<string, unknown>) {
+  const existingSkills = Array.isArray(job.required_skills) ? (job.required_skills as string[]).filter(Boolean) : [];
+  if (existingSkills.length > 0) return existingSkills;
+
+  const lowered = [
+    String(job.title ?? ""),
+    String(job.description ?? ""),
+    ...((job.responsibilities as string[] | undefined) ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  return dedupe(
+    jobSkillDictionary.filter((skill) => lowered.includes(skill)).map((skill) => {
+      if (skill === "node") return "Node.js";
+      if (skill === "hr") return "HR";
+      if (skill === "crm") return "CRM";
+      return titleCase(skill);
+    }),
+  );
 }
 
 async function callGemini(prompt: string) {
@@ -199,8 +253,7 @@ Deno.serve(async (req) => {
       .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
       .eq("status", "Open")
       .eq("review_status", "Approved")
-      .order("posted_at", { ascending: false })
-      .limit(16);
+      .order("posted_at", { ascending: false });
 
     if (category) {
       query = query.eq("category", category);
@@ -214,13 +267,15 @@ Deno.serve(async (req) => {
 
     const shortlist = (jobs ?? [])
       .map((job) => {
+        const requiredSkills = inferJobSkills(job as Record<string, unknown>);
         const jobText = buildJobSearchText(job as Record<string, unknown>);
-        const baseOverlap = overlapCount(profileSkills, job.required_skills ?? []);
+        const baseOverlap = overlapCount(profileSkills, requiredSkills);
         const technicalSignal = includesAny(jobText, technicalKeywords);
         const nonTechnicalSignal = isClearlyNonTechnical(jobText);
 
         return {
           ...job,
+          required_skills: requiredSkills,
           baseOverlap,
           technicalSignal,
           nonTechnicalSignal,
