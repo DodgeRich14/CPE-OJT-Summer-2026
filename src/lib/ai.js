@@ -66,6 +66,80 @@ function buildLocalResumeFallback(payload) {
   };
 }
 
+function normalizeTerms(values) {
+  return values
+    .flatMap((value) =>
+      String(value || "")
+        .toLowerCase()
+        .split(/[^a-z0-9+#.]+/),
+    )
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+}
+
+function dedupeSkills(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+function computeRecommendationFallback(payload, jobs) {
+  const profile = payload?.profile ?? {};
+  const resumeProfile = payload?.resumeProfile ?? {};
+  const profileSkills = dedupeSkills([...(profile.skills ?? []), ...(resumeProfile.skills ?? [])]);
+  const roleTerms = normalizeTerms([profile.jobTitle, ...(resumeProfile.suggested_roles ?? [])]);
+  const aboutTerms = normalizeTerms([profile.about, resumeProfile.summary]);
+
+  const recommendations = (jobs ?? [])
+    .map((job) => {
+      const requiredSkills = Array.isArray(job.required_skills) ? job.required_skills : [];
+      const matchedSkills = requiredSkills.filter((required) =>
+        profileSkills.some((skill) => {
+          const currentSkill = skill.toLowerCase();
+          const neededSkill = required.toLowerCase();
+          return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
+        }),
+      );
+
+      const jobTerms = new Set(
+        normalizeTerms([
+          job.title,
+          job.company_name,
+          job.location,
+          job.work_type,
+          job.description,
+          ...(job.required_skills ?? []),
+          ...(job.responsibilities ?? []),
+        ]),
+      );
+
+      const roleOverlap = roleTerms.filter((term) => jobTerms.has(term)).length;
+      const summaryOverlap = aboutTerms.filter((term) => jobTerms.has(term)).length;
+      const skillScore = requiredSkills.length > 0 ? (matchedSkills.length / requiredSkills.length) * 82 : matchedSkills.length * 12;
+      const score = Math.round(Math.max(Math.min(skillScore + roleOverlap * 6 + Math.min(summaryOverlap, 2) * 4, 97), 8));
+      const skillGaps = requiredSkills.filter((required) => !matchedSkills.includes(required)).slice(0, 4);
+      const reason =
+        matchedSkills.length > 0
+          ? `Fallback ranking matched this role because your profile overlaps with ${matchedSkills.slice(0, 3).join(", ")}.`
+          : `Fallback ranking kept this role visible based on your current role direction and related keywords from your profile.`;
+
+      return {
+        job,
+        job_id: job.id,
+        match_score: score,
+        matched_skills: matchedSkills,
+        skill_gaps: skillGaps,
+        reason,
+      };
+    })
+    .sort((left, right) => right.match_score - left.match_score)
+    .slice(0, 12);
+
+  return {
+    success: true,
+    recommendations,
+    usedFallback: true,
+  };
+}
+
 export async function parseResumeProfile(payload) {
   ensureSupabase();
 
@@ -92,11 +166,35 @@ export async function fetchRecommendedJobs(payload) {
   });
 
   if (error) {
-    throw new Error(error.message || "Job recommendation failed.");
+    const { data: jobs, error: jobsError } = await supabase
+      .from("jobs")
+      .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
+      .eq("status", "Open")
+      .eq("review_status", "Approved")
+      .order("posted_at", { ascending: false })
+      .limit(24);
+
+    if (jobsError) {
+      throw new Error(error.message || jobsError.message || "Job recommendation failed.");
+    }
+
+    return computeRecommendationFallback(payload, jobs ?? []);
   }
 
   if (data?.error) {
-    throw new Error(data.error);
+    const { data: jobs, error: jobsError } = await supabase
+      .from("jobs")
+      .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
+      .eq("status", "Open")
+      .eq("review_status", "Approved")
+      .order("posted_at", { ascending: false })
+      .limit(24);
+
+    if (jobsError) {
+      throw new Error(data.error);
+    }
+
+    return computeRecommendationFallback(payload, jobs ?? []);
   }
 
   return data;

@@ -92,6 +92,58 @@ function formatSalaryMeta(job) {
   return "Salary not listed";
 }
 
+function normalizeSearchTerms(values) {
+  return values
+    .flatMap((value) =>
+      String(value || "")
+        .toLowerCase()
+        .split(/[^a-z0-9+#.]+/),
+    )
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+}
+
+function computeListingSimilarity(listing, profile, recommendation = null) {
+  const profileSkills = Array.isArray(profile.skills) ? profile.skills : [];
+  const requiredSkills = Array.isArray(listing.requiredSkills) ? listing.requiredSkills : [];
+  const matchedSkills =
+    recommendation?.matched_skills?.length
+      ? recommendation.matched_skills
+      : requiredSkills.filter((required) =>
+          profileSkills.some((skill) => {
+            const currentSkill = skill.toLowerCase();
+            const neededSkill = required.toLowerCase();
+            return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
+          }),
+        );
+
+  const matchedCount = matchedSkills.length;
+  const skillScore = requiredSkills.length > 0 ? (matchedCount / requiredSkills.length) * 78 : Math.min(matchedCount * 14, 56);
+
+  const roleTerms = normalizeSearchTerms([profile.jobTitle, ...(profile.aiProfile?.suggested_roles ?? [])]);
+  const listingTerms = new Set(normalizeSearchTerms([listing.title, listing.meta, listing.overview, listing.setup]));
+  const roleOverlapCount = roleTerms.filter((term) => listingTerms.has(term)).length;
+  const roleScore = Math.min(roleOverlapCount * 7, 14);
+
+  const profileLocation = String(profile.location || "").trim().toLowerCase();
+  const locationScore =
+    profileLocation && `${listing.meta} ${listing.setup}`.toLowerCase().includes(profileLocation)
+      ? 8
+      : 0;
+
+  const profileContextScore = profile.about?.trim() && matchedCount > 0 ? 4 : 0;
+  const fallbackScore = Math.round(skillScore + roleScore + locationScore + profileContextScore);
+  const blendedScore =
+    typeof recommendation?.match_score === "number"
+      ? Math.round(recommendation.match_score * 0.82 + fallbackScore * 0.18)
+      : fallbackScore;
+
+  return {
+    matchedSkills,
+    score: Math.max(Math.min(blendedScore, 98), 6),
+  };
+}
+
 const announcementSlides = [
   {
     id: 1,
@@ -1211,51 +1263,45 @@ function App() {
       });
 
       return remoteListings.map((listing) => {
-        const matched = listing.requiredSkills.filter((required) =>
-          state.profile.skills.some((skill) => {
-            const currentSkill = skill.toLowerCase();
-            const neededSkill = required.toLowerCase();
-            return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
-          }),
-        ).length;
-
-        const dynamicScore = state.profile.skills.length && listing.requiredSkills.length
-          ? Math.round((matched / listing.requiredSkills.length) * 100)
-          : listing.scoreBase;
-
         const recommendation = recommendationMap.get(String(listing.id));
+        const similarity = computeListingSimilarity(listing, state.profile, recommendation);
+        const matchedSkills = similarity.matchedSkills;
+        const gaps =
+          recommendation?.skill_gaps ??
+          listing.requiredSkills.filter(
+            (required) =>
+              !matchedSkills.some((skill) => {
+                const currentSkill = skill.toLowerCase();
+                const neededSkill = required.toLowerCase();
+                return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
+              }),
+          );
 
         return {
           ...listing,
-          score: recommendation?.match_score ?? Math.max(Math.min(listing.scoreBase, 96), Math.max(dynamicScore, 61)),
+          score: similarity.score,
           aiReason: recommendation?.reason ?? listing.aiReason ?? "",
-          matchedSkills: recommendation?.matched_skills ?? listing.matchedSkills ?? [],
-          gaps: recommendation?.skill_gaps ?? listing.gaps,
+          matchedSkills,
+          gaps,
         };
       });
     },
-    [state.liveJobs, recommendationMap, state.profile.skills],
+    [recommendationMap, state.liveJobs, state.profile],
   );
 
-  const recommendedListings = useMemo(
-    () =>
-      listings
-        .filter((listing) => recommendationMap.has(String(listing.id)))
-        .sort((left, right) => right.score - left.score),
-    [listings, recommendationMap],
-  );
+  const rankedListings = useMemo(() => [...listings].sort((left, right) => right.score - left.score), [listings]);
 
   const filteredListings = useMemo(() => {
     const normalized = searchQuery.trim().toLowerCase();
 
-    return recommendedListings
+    return rankedListings
       .filter((listing) => {
         const matchesCategory = listing.category === state.activeCategory;
         const haystack = [listing.title, listing.company, listing.meta, ...listing.requiredSkills].join(" ").toLowerCase();
         return matchesCategory && haystack.includes(normalized);
       })
       .sort((left, right) => right.score - left.score);
-  }, [recommendedListings, searchQuery, state.activeCategory]);
+  }, [rankedListings, searchQuery, state.activeCategory]);
 
   const autoRecommendationKey = useMemo(() => {
     if (!state.profile.aiProfile) return "";
@@ -1332,9 +1378,9 @@ function App() {
     () =>
       categories.map((category) => ({
         ...category,
-        count: recommendedListings.filter((listing) => listing.category === category.id).length,
+        count: rankedListings.filter((listing) => listing.category === category.id).length,
       })),
-    [recommendedListings],
+    [rankedListings],
   );
 
   const appliedCards = useMemo(
@@ -1395,7 +1441,7 @@ function App() {
         return `This role is directionally relevant to ${applicantDirection}, but you still need to build up ${topGaps.join(" and ") || "more role-specific skills"} before it becomes a strong fit for your current profile.`;
       })()
     : "";
-  const topRecommendations = state.aiRecommendations.slice(0, 3);
+  const topRecommendations = rankedListings.slice(0, 3);
   const currentSidebarItems = isAdmin ? adminSidebarItems : sidebarItems;
   const profileTabs = isAdmin ? adminProfileTabs : applicantProfileTabs;
   const registeredAdminUsers = state.adminUsers.filter((item) => item.role !== "Admin");
@@ -3068,9 +3114,9 @@ function App() {
                 <div className="ai-studio-head">
                   <div>
                     <span className="section-kicker">AI MATCH STUDIO</span>
-                    <h3>Resume-aware recommendations</h3>
+                    <h3>Resume-aware job ranking</h3>
                     <p>
-                      Upload your resume once, then let Gemini rank live jobs based on your skills, likely role fit, and gaps worth improving.
+                      Upload your resume once, then let Gemini and the live similarity engine rank every job in the database based on your skills, role fit, and the gaps worth improving.
                     </p>
                   </div>
                   <button
@@ -3086,7 +3132,7 @@ function App() {
                 <div className="ai-studio-status">
                   <span>{hasSupabaseConfig ? "Live Supabase connected" : "Supabase not configured"}</span>
                   <span>{state.liveJobs.length} live jobs loaded</span>
-                  <span>{recommendedListings.length} recommended roles</span>
+                  <span>{rankedListings.length} ranked roles</span>
                   <span>{state.aiStatus.updatedAt ? `Updated ${state.aiStatus.updatedAt}` : "Awaiting resume analysis"}</span>
                 </div>
 
@@ -3096,19 +3142,19 @@ function App() {
                   <div className="ai-recommendation-row">
                     {topRecommendations.map((item) => (
                       <button
-                        key={item.job_id}
+                        key={item.id}
                         className="ai-recommendation-pill"
                         type="button"
-                        onClick={() => openJobDetails(item.job_id)}
+                        onClick={() => openJobDetails(item.id)}
                       >
-                        <strong>{item.job.title}</strong>
-                        <span>{item.job.company_name}</span>
-                        <em>{item.match_score} match</em>
+                        <strong>{item.title}</strong>
+                        <span>{item.company}</span>
+                        <em>{item.score} match</em>
                       </button>
                     ))}
                   </div>
                 ) : (
-                  <p className="ai-empty-note">Upload a resume from your profile panel to generate personalized job rankings and skill-gap reasons.</p>
+                  <p className="ai-empty-note">Upload a resume from your profile panel to rank all live jobs by similarity and surface clearer skill-gap reasons.</p>
                 )}
               </article>
 
@@ -3194,10 +3240,10 @@ function App() {
 
                 {filteredListings.length === 0 && (
                   <div className="empty-feed">
-                    <h3>{recommendedListings.length === 0 ? "Upload your resume to unlock recommended roles" : "No matches yet for that search"}</h3>
+                    <h3>{rankedListings.length === 0 ? "No live jobs available yet" : "No matches yet for that search"}</h3>
                     <p>
-                      {recommendedListings.length === 0
-                        ? "Discover now shows only AI-recommended jobs, internships, and volunteer roles based on your resume and profile."
+                      {rankedListings.length === 0
+                        ? "Once live jobs are available in the database, SkillBridge will rank them here by similarity percentage."
                         : "Try another job title, company, location, or skill to broaden your results."}
                     </p>
                   </div>
