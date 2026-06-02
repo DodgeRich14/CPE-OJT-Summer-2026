@@ -44,14 +44,14 @@ const sidebarItems = [
 ];
 
 const adminSidebarItems = [
+  { id: "users", label: "User Management", icon: Users },
+  { id: "courses", label: "Course Management", icon: BookOpen },
+  { id: "certifications-admin", label: "Certification Approvals", icon: ShieldCheck },
+  { id: "mentors", label: "Mentor Verification", icon: BadgeCheck },
+  { id: "employers", label: "Employer Verification", icon: BriefcaseBusiness },
   { id: "analytics", label: "Analytics", icon: LineChart },
-  { id: "users", label: "Users", icon: Users },
-  { id: "courses", label: "Courses", icon: BookOpen },
-  { id: "certifications-admin", label: "Certifications", icon: ShieldCheck },
-  { id: "mentors", label: "Mentors", icon: BadgeCheck },
-  { id: "employers", label: "Employers", icon: BriefcaseBusiness },
-  { id: "revenue", label: "Revenue", icon: DollarSign },
-  { id: "cms", label: "CMS", icon: FileText },
+  { id: "revenue", label: "Revenue Management", icon: DollarSign },
+  { id: "cms", label: "CMS / Content Management", icon: FileText },
 ];
 
 const accentSequence = ["violet", "mint", "violet", "mint", "violet"];
@@ -146,6 +146,17 @@ const categories = [
   { id: "jobs", label: "Jobs", icon: BriefcaseBusiness },
   { id: "internships", label: "Internships", icon: BookOpen },
   { id: "volunteer", label: "Volunteer Jobs", icon: Users },
+];
+
+const applicantProfileTabs = [
+  { id: "info", label: "Info" },
+  { id: "skills", label: "Skills" },
+  { id: "resume", label: "Resume" },
+];
+
+const adminProfileTabs = [
+  { id: "info", label: "Account" },
+  { id: "security", label: "Security" },
 ];
 
 const seedListings = [
@@ -583,6 +594,7 @@ const guestProfile = {
   username: "@guest",
   role: "Visitor",
   email: "",
+  avatarUrl: "",
   firstName: "",
   lastName: "",
   jobTitle: "",
@@ -623,6 +635,7 @@ const adminProfile = {
   username: "@stepbridge.admin",
   role: "Admin",
   email: "admin@stepbridge.ph",
+  avatarUrl: "",
   firstName: "Stepbridge",
   lastName: "Admin",
   jobTitle: "Platform Administrator",
@@ -648,6 +661,9 @@ const defaultState = {
   profilePanelOpen: false,
   profilePanelTab: "info",
   selectedJobId: null,
+  selectedAdminUserId: null,
+  selectedAdminCertificationId: null,
+  adminUserActionId: "",
   authModalOpen: false,
   authMode: "login",
   mentorshipApplied: [],
@@ -662,6 +678,7 @@ const defaultState = {
     refreshingRecommendations: false,
     error: "",
     updatedAt: "",
+    lastAutoRecommendationKey: "",
   },
   applicationStatusById: initialApplicationStatus,
   profileSavedAt: "",
@@ -679,20 +696,13 @@ const defaultState = {
   profileExperience: [],
   profileCertificates: [],
   volunteerActivities: [],
-  adminUsers: [
-    { id: 1, name: "Recent Applicant", role: "Applicant", status: "Active", joined: "May 12, 2026" },
-    { id: 2, name: "Brightlane Labs", role: "Employer", status: "Pending", joined: "May 18, 2026" },
-    { id: 3, name: "Priya Nair", role: "Mentor", status: "Verified", joined: "May 20, 2026" },
-  ],
+  adminUsers: [],
   adminCourses: [
     { id: 1, title: "GraphQL Mastery", owner: "Priya Nair", status: "Published" },
     { id: 2, title: "Frontend Career Launch Lab", owner: "Lena Torres", status: "Review" },
     { id: 3, title: "Cloud Foundations", owner: "Adrian Park", status: "Draft" },
   ],
-  adminCertifications: [
-    { id: 1, title: "AWS Certified Developer - Associate", provider: "AWS", status: "Pending" },
-    { id: 2, title: "Meta Front-End Developer Certificate", provider: "Meta", status: "Approved" },
-  ],
+  adminCertifications: [],
   adminMentors: [
     { id: 1, name: "Marcus Chen", specialty: "System Design", status: "Pending" },
     { id: 2, name: "Sarah Rodriguez", specialty: "React Performance", status: "Verified" },
@@ -741,6 +751,7 @@ function mapProfileRecordToState(record, fallbackUser = null) {
       (fullName ? `@${fullName.toLowerCase().replace(/\s+/g, ".")}` : baseProfile.username),
     role,
     email: record?.email || fallbackUser?.email || "",
+    avatarUrl: record?.avatar_url || baseProfile.avatarUrl,
     firstName,
     lastName,
     jobTitle: record?.job_title || baseProfile.jobTitle,
@@ -764,6 +775,7 @@ function createProfileUpdatePayload(profile) {
     username: profile.username,
     role: profile.role,
     email: profile.email,
+    avatar_url: profile.avatarUrl || null,
     job_title: profile.jobTitle,
     location: profile.location,
     portfolio_url: profile.portfolio,
@@ -780,6 +792,57 @@ function createProfileUpdatePayload(profile) {
   };
 }
 
+function formatAdminUserStatus(status) {
+  if (status === "Active") return "Verified";
+  return status || "Pending";
+}
+
+function getAdminStatusClass(status) {
+  if (status === "Pending") return "reviewed";
+  if (status === "Active") return "ready";
+  return "saved";
+}
+
+function mapAdminUserRecord(record) {
+  return {
+    id: record.id,
+    name: record.full_name || record.email || "Unnamed user",
+    role: record.role || "Applicant",
+    status: record.status || "Pending",
+    joined: formatRelativeDate(record.created_at) === "recently" ? getTodayLongDate() : getTodayLongDateFromValue(record.created_at),
+    email: record.email || "",
+    username: record.username || "",
+    location: record.location || "",
+    title: record.job_title || "",
+    about: record.about || "",
+    skills: Array.isArray(record.skills) ? record.skills : [],
+  };
+}
+
+function mapCertificateSubmissionRecord(record) {
+  const provider = record.provider || "Unknown provider";
+  const submittedAtLabel = record.created_at ? getTodayLongDateFromValue(record.created_at) : getTodayLongDate();
+
+  return {
+    id: record.id,
+    applicantId: record.applicant_id,
+    title: record.title || "Untitled certificate",
+    source: provider,
+    provider,
+    date: record.issue_date_label || `Submitted ${submittedAtLabel}`,
+    submittedDate: record.issue_date_label || `Submitted ${submittedAtLabel}`,
+    status: record.status || "Pending",
+    photoName: record.proof_file_name || "",
+    photoPreview: record.proof_image_data_url || "",
+    uploadedByName: record.uploaded_by_name || "Unknown uploader",
+    uploadedByEmail: record.uploaded_by_email || "",
+    uploadedByRole: record.uploaded_by_role || "",
+    uploadedByTitle: record.uploaded_by_title || "",
+    uploadedByLocation: record.uploaded_by_location || "",
+    uploadedAt: submittedAtLabel,
+  };
+}
+
 function App() {
   const [state, setState] = useState(defaultState);
   const [searchQuery, setSearchQuery] = useState("");
@@ -791,6 +854,7 @@ function App() {
   const [volunteerForm, setVolunteerForm] = useState({ org: "", role: "", status: "Active", last: "" });
   const [passwordForm, setPasswordForm] = useState({ password: "", confirmPassword: "" });
   const [passwordFeedback, setPasswordFeedback] = useState("");
+  const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -838,6 +902,8 @@ function App() {
             password: "",
           },
           profile: guestProfile,
+          profileCertificates: [],
+          adminCertifications: [],
         }));
         return;
       }
@@ -954,6 +1020,65 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!hasSupabaseConfig || !supabase || !isAdmin) return;
+
+    let cancelled = false;
+
+    loadAdminUsers(cancelled).catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !supabase || !state.auth.accountId) return;
+
+    let cancelled = false;
+
+    supabase
+      .from("certificate_submissions")
+      .select("*")
+      .eq("applicant_id", state.auth.accountId)
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled || error) return;
+
+        setState((current) => ({
+          ...current,
+          profileCertificates: (data ?? []).map(mapCertificateSubmissionRecord),
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.auth.accountId]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !supabase || !isAdmin) return;
+
+    let cancelled = false;
+
+    supabase
+      .from("certificate_submissions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (cancelled || error) return;
+
+        setState((current) => ({
+          ...current,
+          adminCertifications: (data ?? []).map(mapCertificateSubmissionRecord),
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin]);
+
   const profileInitials = useMemo(
     () =>
       state.profile.fullName
@@ -994,8 +1119,10 @@ function App() {
           title: job.title,
           meta: `${job.work_type || "Flexible"} | ${job.location || "Philippines"} | ${formatSalaryMeta(job)}`,
           overview: job.description,
+          sourceDescription: job.description,
           setup: `${job.category} | ${job.work_type || "Flexible"} | ${job.source_platform || "External listing"}`,
-          responsibilities: job.responsibilities?.length ? job.responsibilities : [job.description],
+          responsibilities: job.responsibilities?.length ? job.responsibilities : [],
+          sourceResponsibilities: job.responsibilities?.length ? job.responsibilities : [],
           employerNotes: [
             job.work_type
               ? `${job.work_type} setup with coordination expectations set by the employer`
@@ -1065,20 +1192,46 @@ function App() {
       .sort((left, right) => right.score - left.score);
   }, [recommendedListings, searchQuery, state.activeCategory]);
 
+  const autoRecommendationKey = useMemo(() => {
+    if (!state.profile.aiProfile) return "";
+
+    return [
+      state.profile.resumeFileName,
+      state.profile.resumeUploadedAt,
+      state.profile.jobTitle,
+      state.profile.location,
+      state.profile.skills.join("|"),
+      state.liveJobs.length,
+    ].join("::");
+  }, [
+    state.liveJobs.length,
+    state.profile.aiProfile,
+    state.profile.jobTitle,
+    state.profile.location,
+    state.profile.resumeFileName,
+    state.profile.resumeUploadedAt,
+    state.profile.skills,
+  ]);
+
   useEffect(() => {
     if (!hasSupabaseConfig) return;
     if (!state.profile.aiProfile) return;
     if (state.liveJobs.length === 0) return;
     if (state.aiRecommendations.length > 0) return;
     if (state.aiStatus.refreshingRecommendations || state.aiStatus.analyzingResume) return;
+    if (state.aiStatus.lastAutoRecommendationKey === autoRecommendationKey) return;
 
-    refreshRecommendations(state.profile, state.profile.aiProfile).catch(() => {});
+    refreshRecommendations(state.profile, state.profile.aiProfile, {
+      autoKey: autoRecommendationKey,
+    }).catch(() => {});
   }, [
     state.aiRecommendations.length,
+    state.aiStatus.lastAutoRecommendationKey,
     state.aiStatus.analyzingResume,
     state.aiStatus.refreshingRecommendations,
     state.liveJobs.length,
     state.profile,
+    autoRecommendationKey,
   ]);
 
   useEffect(() => {
@@ -1156,11 +1309,35 @@ function App() {
   );
   const selectedJob = listings.find((listing) => listing.id === state.selectedJobId) ?? null;
   const selectedJobRecommendation = selectedJob ? recommendationMap.get(String(selectedJob.id)) ?? null : null;
+  const selectedJobFitReason = selectedJob
+    ? (() => {
+        const matchedSkills = selectedJobRecommendation?.matched_skills?.length
+          ? selectedJobRecommendation.matched_skills
+          : getRelevantSkills(selectedJob);
+        const topMatchedSkills = matchedSkills.slice(0, 3);
+        const topGaps = selectedJob.gaps.slice(0, 2);
+        const applicantDirection =
+          state.profile.jobTitle ||
+          state.profile.aiProfile?.suggested_roles?.[0] ||
+          "your current career direction";
+
+        if (topMatchedSkills.length > 0) {
+          return `This role fits ${applicantDirection} because your profile already shows strength in ${topMatchedSkills.join(", ")}. ${
+            topGaps.length > 0 ? `If you improve ${topGaps.join(" and ")}, you can become an even stronger match for this position.` : "You already cover the strongest signals this employer is asking for."
+          }`;
+        }
+
+        return `This role is directionally relevant to ${applicantDirection}, but you still need to build up ${topGaps.join(" and ") || "more role-specific skills"} before it becomes a strong fit for your current profile.`;
+      })()
+    : "";
   const topRecommendations = state.aiRecommendations.slice(0, 3);
-  const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
   const currentSidebarItems = isAdmin ? adminSidebarItems : sidebarItems;
+  const profileTabs = isAdmin ? adminProfileTabs : applicantProfileTabs;
+  const registeredAdminUsers = state.adminUsers.filter((item) => item.role !== "Admin");
+  const selectedAdminUser = registeredAdminUsers.find((item) => item.id === state.selectedAdminUserId) ?? null;
+  const selectedAdminCertification = state.adminCertifications.find((item) => item.id === state.selectedAdminCertificationId) ?? null;
   const adminOverview = {
-    totalUsers: state.adminUsers.length,
+    totalUsers: registeredAdminUsers.length,
     pendingReviews:
       state.adminCertifications.filter((item) => item.status === "Pending").length +
       state.adminMentors.filter((item) => item.status === "Pending").length +
@@ -1176,6 +1353,15 @@ function App() {
       activeSidebar: isAdmin ? "analytics" : "discover",
     }));
   }, [currentSidebarItems, isAdmin, state.activeSidebar]);
+
+  useEffect(() => {
+    if (profileTabs.some((tab) => tab.id === state.profilePanelTab)) return;
+
+    setState((current) => ({
+      ...current,
+      profilePanelTab: "info",
+    }));
+  }, [profileTabs, state.profilePanelTab]);
 
   function patchState(patch) {
     setState((current) => ({ ...current, ...patch }));
@@ -1211,6 +1397,60 @@ function App() {
     setPasswordForm((current) => ({ ...current, [field]: value }));
   }
 
+  async function loadAdminUsers(cancelled = false) {
+    if (!hasSupabaseConfig || !supabase) return;
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id, full_name, role, status, created_at, email, username, location, job_title, about, skills")
+      .order("created_at", { ascending: false });
+
+    if (cancelled) return;
+
+    if (error) {
+      setAuthFeedback(error.message || "Unable to load the registered users.");
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      adminUsers: (data ?? []).map(mapAdminUserRecord),
+    }));
+  }
+
+  async function handleProfilePhotoChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setAuthFeedback("Upload an image file for your profile photo.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 1.5 * 1024 * 1024) {
+      setAuthFeedback("Profile photos must be 1.5 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const avatarUrl = await readFileAsDataUrl(file);
+      setState((current) => ({
+        ...current,
+        profile: {
+          ...current.profile,
+          avatarUrl,
+        },
+      }));
+      setAuthFeedback("");
+    } catch (error) {
+      setAuthFeedback(error instanceof Error ? error.message : "Unable to load the selected profile photo.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   async function handleCertificatePhotoChange(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -1242,13 +1482,14 @@ function App() {
     }
   }
 
-  async function refreshRecommendations(profileOverride, aiProfileOverride) {
+  async function refreshRecommendations(profileOverride, aiProfileOverride, options = {}) {
     if (!hasSupabaseConfig) {
       throw new Error("Supabase is not configured for AI recommendations.");
     }
 
     const profile = profileOverride ?? state.profile;
     const aiProfile = aiProfileOverride ?? state.profile.aiProfile;
+    const autoKey = options.autoKey ?? "";
 
     setState((current) => ({
       ...current,
@@ -1256,6 +1497,7 @@ function App() {
         ...current.aiStatus,
         refreshingRecommendations: true,
         error: "",
+        lastAutoRecommendationKey: autoKey || current.aiStatus.lastAutoRecommendationKey,
       },
     }));
 
@@ -1334,7 +1576,23 @@ function App() {
     }));
   }
 
-  function updateAdminCollection(key, itemId, field, value) {
+  async function updateAdminCollection(key, itemId, field, value) {
+    if (key === "adminCertifications" && field === "status" && hasSupabaseConfig && supabase) {
+      const payload = {
+        status: value,
+        reviewed_at: new Date().toISOString(),
+      };
+      const { error } = await supabase
+        .from("certificate_submissions")
+        .update(payload)
+        .eq("id", itemId);
+
+      if (error) {
+        setAuthFeedback(error.message || "Unable to update the certificate status.");
+        return;
+      }
+    }
+
     setState((current) => {
       const nextState = {
         ...current,
@@ -1349,6 +1607,42 @@ function App() {
 
       return nextState;
     });
+
+    setAuthFeedback("");
+  }
+
+  async function updateAdminUserStatus(userId, nextStatus) {
+    setState((current) => ({
+      ...current,
+      adminUserActionId: userId,
+    }));
+
+    if (hasSupabaseConfig && supabase) {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ status: nextStatus })
+        .eq("id", userId);
+
+      if (error) {
+        setAuthFeedback(error.message || "Unable to update the user status.");
+        setState((current) => ({
+          ...current,
+          adminUserActionId: "",
+        }));
+        return;
+      }
+
+      await loadAdminUsers();
+    }
+
+    setAuthFeedback(`User ${nextStatus === "Active" ? "verified" : "suspended"} successfully.`);
+    setState((current) => ({
+      ...current,
+      adminUserActionId: "",
+      adminUsers: current.adminUsers.map((item) =>
+        item.id === userId ? { ...item, status: nextStatus } : item,
+      ),
+    }));
   }
 
   function applyToJob(jobId) {
@@ -1392,6 +1686,20 @@ function App() {
     setState((current) => ({
       ...current,
       selectedJobId: jobId,
+    }));
+  }
+
+  function openAdminUserDetails(userId) {
+    setState((current) => ({
+      ...current,
+      selectedAdminUserId: userId,
+    }));
+  }
+
+  function openAdminCertificationDetails(certificationId) {
+    setState((current) => ({
+      ...current,
+      selectedAdminCertificationId: certificationId,
     }));
   }
 
@@ -1511,6 +1819,7 @@ function App() {
         ...current.aiStatus,
         analyzingResume: true,
         error: "",
+        lastAutoRecommendationKey: "",
       },
       aiRecommendations: [],
       profile: {
@@ -1705,7 +2014,7 @@ function App() {
     setExperienceForm({ title: "", company: "", period: "", years: "" });
   }
 
-  function addCertificateCard() {
+  async function addCertificateCard() {
     if (!certificateForm.title.trim() || !certificateForm.source.trim()) {
       setAuthFeedback("Add the certificate title and provider before submitting it for review.");
       return;
@@ -1713,6 +2022,45 @@ function App() {
 
     if (!certificateForm.photoPreview) {
       setAuthFeedback("Upload a certificate photo before submitting it for review.");
+      return;
+    }
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId) {
+      const insertPayload = {
+        applicant_id: state.auth.accountId,
+        title: certificateForm.title.trim(),
+        provider: certificateForm.source.trim(),
+        issue_date_label: certificateForm.date.trim() || null,
+        status: "Pending",
+        proof_file_name: certificateForm.photoName,
+        proof_image_data_url: certificateForm.photoPreview,
+        uploaded_by_name: state.profile.fullName,
+        uploaded_by_email: state.profile.email,
+        uploaded_by_role: state.profile.role,
+        uploaded_by_title: state.profile.jobTitle,
+        uploaded_by_location: state.profile.location,
+      };
+
+      const { data, error } = await supabase
+        .from("certificate_submissions")
+        .insert(insertPayload)
+        .select("*")
+        .single();
+
+      if (error) {
+        setAuthFeedback(error.message || "Unable to submit the certificate for admin review.");
+        return;
+      }
+
+      const certificateEntry = mapCertificateSubmissionRecord(data);
+
+      setState((current) => ({
+        ...current,
+        profileCertificates: [certificateEntry, ...current.profileCertificates.filter((item) => item.id !== certificateEntry.id)],
+      }));
+
+      setAuthFeedback("");
+      setCertificateForm({ title: "", source: "", date: "", photoName: "", photoPreview: "" });
       return;
     }
 
@@ -1724,6 +2072,12 @@ function App() {
       status: "Pending",
       photoName: certificateForm.photoName,
       photoPreview: certificateForm.photoPreview,
+      uploadedByName: state.profile.fullName,
+      uploadedByEmail: state.profile.email,
+      uploadedByRole: state.profile.role,
+      uploadedByTitle: state.profile.jobTitle,
+      uploadedByLocation: state.profile.location,
+      uploadedAt: getTodayLongDate(),
     };
 
     setState((current) => ({
@@ -1737,6 +2091,13 @@ function App() {
           status: "Pending",
           photoName: certificateEntry.photoName,
           photoPreview: certificateEntry.photoPreview,
+          uploadedByName: certificateEntry.uploadedByName,
+          uploadedByEmail: certificateEntry.uploadedByEmail,
+          uploadedByRole: certificateEntry.uploadedByRole,
+          uploadedByTitle: certificateEntry.uploadedByTitle,
+          uploadedByLocation: certificateEntry.uploadedByLocation,
+          uploadedAt: certificateEntry.uploadedAt,
+          submittedDate: certificateEntry.date,
         },
         ...current.adminCertifications,
       ],
@@ -2018,7 +2379,9 @@ function App() {
             type="button"
             onClick={() => (state.auth.isAuthenticated ? patchState({ profilePanelOpen: true }) : openAuthModal("login"))}
           >
-            <div className="sidebar-avatar">{profileInitials}</div>
+            <div className="sidebar-avatar">
+              {state.profile.avatarUrl ? <img src={state.profile.avatarUrl} alt={`${state.profile.fullName} avatar`} className="sidebar-avatar-image" /> : profileInitials}
+            </div>
             <div>
               <strong>{state.profile.fullName}</strong>
               <span>{state.profile.role}</span>
@@ -2126,27 +2489,53 @@ function App() {
             </div>
 
             <div className="progress-card-list">
-              {state.adminUsers.map((item) => (
-                <article key={item.id} className="progress-card">
+              {registeredAdminUsers.map((item) => (
+                <article key={item.id} className="progress-card interactive-card" onClick={() => openAdminUserDetails(item.id)}>
                   <div className="application-top">
                     <div className="listing-avatar violet">{item.name.slice(0, 1)}</div>
                     <div className="application-copy">
                       <h3>{item.name}</h3>
-                      <p>{item.role}</p>
+                      <p>{item.title || item.role}</p>
                       <span>Joined {item.joined}</span>
                     </div>
-                    <span className={`status-badge ${item.status === "Pending" ? "reviewed" : item.status === "Verified" || item.status === "Active" ? "ready" : "saved"}`}>{item.status}</span>
+                    <span className={`status-badge ${getAdminStatusClass(item.status)}`}>{formatAdminUserStatus(item.status)}</span>
                   </div>
                   <div className="application-actions">
-                    <button className="ghost-action" type="button" onClick={() => updateAdminCollection("adminUsers", item.id, "status", "Verified")}>
-                      Verify
-                    </button>
-                    <button className="ghost-action" type="button" onClick={() => updateAdminCollection("adminUsers", item.id, "status", "Suspended")}>
-                      Suspend
-                    </button>
+                    {item.status !== "Active" ? (
+                      <button
+                        className="ghost-action"
+                        type="button"
+                        disabled={state.adminUserActionId === item.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateAdminUserStatus(item.id, "Active");
+                        }}
+                      >
+                        {state.adminUserActionId === item.id ? "Updating..." : "Verify"}
+                      </button>
+                    ) : null}
+                    {item.status !== "Suspended" ? (
+                      <button
+                        className="ghost-action"
+                        type="button"
+                        disabled={state.adminUserActionId === item.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateAdminUserStatus(item.id, "Suspended");
+                        }}
+                      >
+                        {state.adminUserActionId === item.id ? "Updating..." : "Suspend"}
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               ))}
+              {registeredAdminUsers.length === 0 ? (
+                <div className="empty-feed">
+                  <h3>No registered users to review</h3>
+                  <p>Verified and suspended user accounts will appear here for admin action.</p>
+                </div>
+              ) : null}
             </div>
           </section>
         )}
@@ -2203,13 +2592,13 @@ function App() {
 
             <div className="progress-card-list">
               {state.adminCertifications.map((item) => (
-                <article key={item.id} className="progress-card">
+                <article key={item.id} className="progress-card interactive-card" onClick={() => openAdminCertificationDetails(item.id)}>
                   <div className="application-top">
                     <div className="cert-provider">{item.provider}</div>
                     <div className="application-copy">
                       <h3>{item.title}</h3>
-                      <p>{item.provider}</p>
-                      <span>{item.photoName ? `Proof attached: ${item.photoName}` : "Certification directory review"}</span>
+                      <p>{item.uploadedByName || "Unknown uploader"}</p>
+                      <span>{item.photoName ? `Proof attached: ${item.photoName}` : "Awaiting certificate proof"}</span>
                     </div>
                     <span className={`status-badge ${item.status === "Approved" ? "ready" : item.status === "Rejected" ? "saved" : "reviewed"}`}>{item.status}</span>
                   </div>
@@ -2222,15 +2611,35 @@ function App() {
                     </div>
                   ) : null}
                   <div className="application-actions">
-                    <button className="ghost-action" type="button" onClick={() => updateAdminCollection("adminCertifications", item.id, "status", "Approved")}>
+                    <button
+                      className="ghost-action"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateAdminCollection("adminCertifications", item.id, "status", "Approved");
+                      }}
+                    >
                       Approve
                     </button>
-                    <button className="ghost-action" type="button" onClick={() => updateAdminCollection("adminCertifications", item.id, "status", "Rejected")}>
+                    <button
+                      className="ghost-action"
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        updateAdminCollection("adminCertifications", item.id, "status", "Rejected");
+                      }}
+                    >
                       Reject
                     </button>
                   </div>
                 </article>
               ))}
+              {state.adminCertifications.length === 0 ? (
+                <div className="empty-feed">
+                  <h3>No certificate submissions yet</h3>
+                  <p>User-uploaded certificate proofs will appear here for admin review.</p>
+                </div>
+              ) : null}
             </div>
           </section>
         )}
@@ -3157,7 +3566,9 @@ function App() {
           <aside className="profile-panel" onClick={(event) => event.stopPropagation()}>
             <div className="profile-panel-header">
               <div className="profile-panel-user">
-                <div className="sidebar-avatar large">{profileInitials}</div>
+                <div className="sidebar-avatar large">
+                  {state.profile.avatarUrl ? <img src={state.profile.avatarUrl} alt={`${state.profile.fullName} avatar`} className="sidebar-avatar-image" /> : profileInitials}
+                </div>
                 <div>
                   <strong>{state.profile.fullName}</strong>
                   <span>{state.profile.username}</span>
@@ -3169,11 +3580,7 @@ function App() {
             </div>
 
             <div className="profile-tab-row">
-              {[
-                { id: "info", label: "Info" },
-                { id: "skills", label: "Skills" },
-                { id: "resume", label: "Resume" },
-              ].map((tab) => (
+              {profileTabs.map((tab) => (
                 <button
                   key={tab.id}
                   className={`profile-tab${state.profilePanelTab === tab.id ? " active" : ""}`}
@@ -3186,7 +3593,7 @@ function App() {
             </div>
 
             <div className="profile-panel-body">
-              {state.profilePanelTab === "info" && (
+              {state.profilePanelTab === "info" && !isAdmin && (
                 <div className="profile-section-stack">
                   <div className="profile-label-group">
                     <span className="profile-label">User Role</span>
@@ -3247,6 +3654,15 @@ function App() {
                       <input value={state.profile.portfolio} onChange={(event) => patchProfile("portfolio", event.target.value)} />
                     </div>
                   </label>
+
+                  <div className="profile-list-block">
+                    <span className="profile-label">Profile Photo</span>
+                    <label className="certificate-upload-box">
+                      <input type="file" accept="image/*" onChange={handleProfilePhotoChange} />
+                      <span>{state.profile.avatarUrl ? "Replace profile photo" : "Upload a profile photo"}</span>
+                    </label>
+                    {state.profile.avatarUrl ? <img src={state.profile.avatarUrl} alt="Profile preview" className="profile-photo-preview" /> : null}
+                  </div>
 
                   <label className="profile-field full">
                     <span>About</span>
@@ -3349,7 +3765,113 @@ function App() {
                 </div>
               )}
 
-              {state.profilePanelTab === "skills" && (
+              {state.profilePanelTab === "info" && isAdmin && (
+                <div className="profile-section-stack">
+                  <div className="profile-label-group">
+                    <span className="profile-label">Admin Access</span>
+                    <div className="profile-role-box">
+                      <strong>{state.profile.role}</strong>
+                      <span>Use this account to manage approvals, platform content, user verification, revenue, and admin-side operations.</span>
+                    </div>
+                  </div>
+
+                  <label className="profile-field full">
+                    <span>
+                      Email <em>locked</em>
+                    </span>
+                    <div className="profile-input-wrap">
+                      <AtSign size={14} />
+                      <input value={state.profile.email} disabled />
+                    </div>
+                  </label>
+
+                  <div className="profile-grid">
+                    <label className="profile-field">
+                      <span>First Name</span>
+                      <div className="profile-input-wrap">
+                        <User size={14} />
+                        <input value={state.profile.firstName} onChange={(event) => patchProfile("firstName", event.target.value)} />
+                      </div>
+                    </label>
+
+                    <label className="profile-field">
+                      <span>Last Name</span>
+                      <div className="profile-input-wrap">
+                        <User size={14} />
+                        <input value={state.profile.lastName} onChange={(event) => patchProfile("lastName", event.target.value)} />
+                      </div>
+                    </label>
+
+                    <label className="profile-field">
+                      <span>Admin Title</span>
+                      <div className="profile-input-wrap">
+                        <BriefcaseBusiness size={14} />
+                        <input
+                          value={state.profile.jobTitle}
+                          onChange={(event) => patchProfile("jobTitle", event.target.value)}
+                          placeholder="Platform Administrator"
+                        />
+                      </div>
+                    </label>
+
+                    <label className="profile-field">
+                      <span>Location</span>
+                      <div className="profile-input-wrap">
+                        <MapPin size={14} />
+                        <input value={state.profile.location} onChange={(event) => patchProfile("location", event.target.value)} placeholder="Manila, Philippines" />
+                      </div>
+                    </label>
+                  </div>
+
+                  <label className="profile-field full">
+                    <span>Username</span>
+                    <div className="profile-input-wrap">
+                      <AtSign size={14} />
+                      <input
+                        value={state.profile.username}
+                        onChange={(event) => patchProfile("username", event.target.value)}
+                        placeholder="@admin.name"
+                      />
+                    </div>
+                  </label>
+
+                  <div className="profile-list-block">
+                    <span className="profile-label">Profile Photo</span>
+                    <label className="certificate-upload-box">
+                      <input type="file" accept="image/*" onChange={handleProfilePhotoChange} />
+                      <span>{state.profile.avatarUrl ? "Replace profile photo" : "Upload a profile photo"}</span>
+                    </label>
+                    {state.profile.avatarUrl ? <img src={state.profile.avatarUrl} alt="Profile preview" className="profile-photo-preview" /> : null}
+                  </div>
+
+                  <label className="profile-field full">
+                    <span>Admin Summary</span>
+                    <textarea
+                      value={state.profile.about}
+                      onChange={(event) => patchProfile("about", event.target.value)}
+                      rows={4}
+                      placeholder="Describe this admin account's responsibilities or internal ownership."
+                    />
+                  </label>
+
+                  <div className="profile-list-block">
+                    <span className="profile-label">Access Scope</span>
+                    <div className="progress-tags">
+                      {adminSidebarItems.map((item) => (
+                        <span key={item.id}>{item.label}</span>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="profile-action-row">
+                    <button className="profile-primary-button" type="button" onClick={saveProfileChanges}>
+                      Save Changes
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {state.profilePanelTab === "skills" && !isAdmin && (
                 <div className="profile-section-stack">
                   <div className="profile-list-block">
                     <span className="profile-label">My Skills</span>
@@ -3488,7 +4010,7 @@ function App() {
                 </div>
               )}
 
-              {state.profilePanelTab === "resume" && (
+              {state.profilePanelTab === "resume" && !isAdmin && (
                 <div className="profile-section-stack">
                   <label className="resume-dropzone">
                     <input type="file" accept=".pdf,.doc,.docx,.txt" onChange={handleResumeFileUpload} />
@@ -3543,6 +4065,58 @@ function App() {
                     />
                     <button className="profile-primary-button small" type="button" onClick={importLinkedInProfile}>
                       Import
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {state.profilePanelTab === "security" && isAdmin && (
+                <div className="profile-section-stack">
+                  <div className="profile-role-box">
+                    <strong>Security Settings</strong>
+                    <span>Update this admin account password here. Changes apply to your next authenticated session immediately.</span>
+                  </div>
+
+                  <div className="profile-list-block">
+                    <span className="profile-label">Signed-in Account</span>
+                    <div className="progress-tags">
+                      <span>{state.profile.email}</span>
+                      <span>{state.profile.role}</span>
+                      <span>{state.profile.jobTitle || "Platform Administrator"}</span>
+                    </div>
+                  </div>
+
+                  <div className="profile-list-block">
+                    <span className="profile-label">Change Password</span>
+                    <div className="profile-entry-grid">
+                      <label className="profile-field">
+                        <span>New Password</span>
+                        <div className="profile-input-wrap">
+                          <ShieldCheck size={14} />
+                          <input
+                            type="password"
+                            value={passwordForm.password}
+                            onChange={(event) => patchPasswordForm("password", event.target.value)}
+                            placeholder="Enter a new password"
+                          />
+                        </div>
+                      </label>
+                      <label className="profile-field">
+                        <span>Confirm Password</span>
+                        <div className="profile-input-wrap">
+                          <ShieldCheck size={14} />
+                          <input
+                            type="password"
+                            value={passwordForm.confirmPassword}
+                            onChange={(event) => patchPasswordForm("confirmPassword", event.target.value)}
+                            placeholder="Confirm your new password"
+                          />
+                        </div>
+                      </label>
+                    </div>
+                    {passwordFeedback ? <p className="auth-feedback">{passwordFeedback}</p> : null}
+                    <button className="profile-dashed-button" type="button" onClick={changePasswordFromProfile}>
+                      Update Password
                     </button>
                   </div>
                 </div>
@@ -3745,20 +4319,22 @@ function App() {
 
                 <div className="profile-role-box">
                   <strong>About this job</strong>
-                  <span>{selectedJob.overview}</span>
+                  <span>{selectedJob.sourceDescription || "The original job source did not provide a detailed description for this role."}</span>
                 </div>
 
-                <div className="profile-list-block">
-                  <span className="profile-label">What You Will Do</span>
-                  <div className="job-detail-list">
-                    {selectedJob.responsibilities.map((item) => (
-                      <div key={item} className="job-detail-item">
-                        <ArrowRight size={12} />
-                        <span>{item}</span>
-                      </div>
-                    ))}
+                {selectedJob.sourceResponsibilities.length > 0 ? (
+                  <div className="profile-list-block">
+                    <span className="profile-label">What You Will Do</span>
+                    <div className="job-detail-list">
+                      {selectedJob.sourceResponsibilities.map((item) => (
+                        <div key={item} className="job-detail-item">
+                          <ArrowRight size={12} />
+                          <span>{item}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                ) : null}
 
                 <div className="profile-list-block">
                   <span className="profile-label">Employer Priorities</span>
@@ -3808,8 +4384,7 @@ function App() {
                 <div className="profile-role-box">
                   <strong>Why this role fits you</strong>
                   <span>
-                    {selectedJobRecommendation?.reason ||
-                      `This employer is looking for ${selectedJob.requiredSkills.slice(0, 3).join(", ")}. Your current profile already matches ${getRelevantSkills(selectedJob).length} of the listed requirements.`}
+                    {selectedJobFitReason}
                   </span>
                 </div>
 
@@ -3824,6 +4399,194 @@ function App() {
                   >
                     {state.saved.includes(selectedJob.id) ? "Saved" : "Save"}
                   </button>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {selectedAdminUser && (
+        <div className="profile-overlay job-modal-overlay" onClick={() => patchState({ selectedAdminUserId: null })}>
+          <aside className="profile-panel job-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="profile-panel-header">
+              <div className="profile-panel-user">
+                <div className="sidebar-avatar large">{selectedAdminUser.name.slice(0, 1)}</div>
+                <div>
+                  <strong>{selectedAdminUser.name}</strong>
+                  <span>{selectedAdminUser.username || selectedAdminUser.role}</span>
+                </div>
+              </div>
+              <button className="profile-close" type="button" onClick={() => patchState({ selectedAdminUserId: null })}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="profile-panel-body">
+              <div className="profile-section-stack">
+                <div className="job-modal-summary">
+                  <div className="job-modal-meta">
+                    <span>{selectedAdminUser.title || selectedAdminUser.role}</span>
+                    <span>{selectedAdminUser.location || "Location not provided"}</span>
+                    <span>{selectedAdminUser.email}</span>
+                    <span>Joined {selectedAdminUser.joined}</span>
+                  </div>
+                  <span className={`status-badge ${getAdminStatusClass(selectedAdminUser.status)}`}>
+                    {formatAdminUserStatus(selectedAdminUser.status)}
+                  </span>
+                </div>
+
+                <div className="profile-role-box">
+                  <strong>About this user</strong>
+                  <span>{selectedAdminUser.about || "No additional user summary was provided."}</span>
+                </div>
+
+                <div className="profile-list-block">
+                  <span className="profile-label">Registered Role</span>
+                  <div className="progress-tags">
+                    <span>{selectedAdminUser.role}</span>
+                    {selectedAdminUser.title ? <span>{selectedAdminUser.title}</span> : null}
+                  </div>
+                </div>
+
+                <div className="profile-list-block">
+                  <span className="profile-label">Skills</span>
+                  <div className="progress-tags">
+                    {(selectedAdminUser.skills ?? []).length > 0 ? (
+                      selectedAdminUser.skills.map((skill) => <span key={skill}>{skill}</span>)
+                    ) : (
+                      <span>No skills listed yet</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="profile-action-row">
+                  {selectedAdminUser.status !== "Active" ? (
+                    <button
+                      className="profile-primary-button"
+                      type="button"
+                      disabled={state.adminUserActionId === selectedAdminUser.id}
+                      onClick={() => updateAdminUserStatus(selectedAdminUser.id, "Active")}
+                    >
+                      {state.adminUserActionId === selectedAdminUser.id ? "Updating..." : "Verify User"}
+                    </button>
+                  ) : (
+                    <button className="profile-primary-button" type="button" disabled>
+                      User Verified
+                    </button>
+                  )}
+                  {selectedAdminUser.status !== "Suspended" ? (
+                    <button
+                      className="profile-danger-button"
+                      type="button"
+                      disabled={state.adminUserActionId === selectedAdminUser.id}
+                      onClick={() => updateAdminUserStatus(selectedAdminUser.id, "Suspended")}
+                    >
+                      {state.adminUserActionId === selectedAdminUser.id ? "Updating..." : "Suspend User"}
+                    </button>
+                  ) : (
+                    <button className="profile-danger-button" type="button" disabled>
+                      Suspended
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {selectedAdminCertification && (
+        <div className="profile-overlay job-modal-overlay" onClick={() => patchState({ selectedAdminCertificationId: null })}>
+          <aside className="profile-panel job-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="profile-panel-header">
+              <div className="profile-panel-user">
+                <div className="cert-provider">{selectedAdminCertification.provider}</div>
+                <div>
+                  <strong>{selectedAdminCertification.title}</strong>
+                  <span>{selectedAdminCertification.uploadedByName || "Unknown uploader"}</span>
+                </div>
+              </div>
+              <button className="profile-close" type="button" onClick={() => patchState({ selectedAdminCertificationId: null })}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="profile-panel-body">
+              <div className="profile-section-stack">
+                <div className="job-modal-summary">
+                  <div className="job-modal-meta">
+                    <span>{selectedAdminCertification.provider}</span>
+                    <span>{selectedAdminCertification.submittedDate || selectedAdminCertification.uploadedAt || "Submission date not provided"}</span>
+                    <span>{selectedAdminCertification.uploadedByEmail || "Email not provided"}</span>
+                    <span>{selectedAdminCertification.uploadedAt ? `Uploaded ${selectedAdminCertification.uploadedAt}` : "Pending review"}</span>
+                  </div>
+                  <span className={`status-badge ${selectedAdminCertification.status === "Approved" ? "ready" : selectedAdminCertification.status === "Rejected" ? "saved" : "reviewed"}`}>
+                    {selectedAdminCertification.status}
+                  </span>
+                </div>
+
+                <div className="profile-role-box">
+                  <strong>Uploaded by</strong>
+                  <span>
+                    {selectedAdminCertification.uploadedByName || "Unknown user"}
+                    {selectedAdminCertification.uploadedByTitle ? ` | ${selectedAdminCertification.uploadedByTitle}` : ""}
+                    {selectedAdminCertification.uploadedByLocation ? ` | ${selectedAdminCertification.uploadedByLocation}` : ""}
+                  </span>
+                </div>
+
+                <div className="profile-list-block">
+                  <span className="profile-label">Certificate Details</span>
+                  <div className="progress-tags">
+                    <span>{selectedAdminCertification.title}</span>
+                    <span>{selectedAdminCertification.provider}</span>
+                    {selectedAdminCertification.submittedDate ? <span>{selectedAdminCertification.submittedDate}</span> : null}
+                  </div>
+                </div>
+
+                {selectedAdminCertification.photoPreview ? (
+                  <div className="profile-list-block">
+                    <span className="profile-label">Certificate Proof</span>
+                    <div className="certificate-proof-block">
+                      <img
+                        src={selectedAdminCertification.photoPreview}
+                        alt={`${selectedAdminCertification.title} certificate proof`}
+                        className="certificate-proof-image"
+                      />
+                      <a className="auth-inline-link" href={selectedAdminCertification.photoPreview} target="_blank" rel="noreferrer">
+                        Open proof image
+                      </a>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="profile-action-row">
+                  {selectedAdminCertification.status !== "Approved" ? (
+                    <button
+                      className="profile-primary-button"
+                      type="button"
+                      onClick={() => updateAdminCollection("adminCertifications", selectedAdminCertification.id, "status", "Approved")}
+                    >
+                      Approve Certificate
+                    </button>
+                  ) : (
+                    <button className="profile-primary-button" type="button" disabled>
+                      Certificate Approved
+                    </button>
+                  )}
+                  {selectedAdminCertification.status !== "Rejected" ? (
+                    <button
+                      className="profile-danger-button"
+                      type="button"
+                      onClick={() => updateAdminCollection("adminCertifications", selectedAdminCertification.id, "status", "Rejected")}
+                    >
+                      Reject Certificate
+                    </button>
+                  ) : (
+                    <button className="profile-danger-button" type="button" disabled>
+                      Rejected
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -3857,6 +4620,19 @@ function getTodayLongDate() {
   });
 }
 
+function getTodayLongDateFromValue(value) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) {
+    return getTodayLongDate();
+  }
+
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function getCurrentUploadLabel() {
   return `Uploaded ${new Date().toLocaleString("en-US", {
     month: "short",
@@ -3865,6 +4641,14 @@ function getCurrentUploadLabel() {
     hour: "numeric",
     minute: "2-digit",
   })}`;
+}
+
+function normalizeComparableText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function readFileAsDataUrl(file) {
