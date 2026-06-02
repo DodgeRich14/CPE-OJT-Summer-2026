@@ -676,18 +676,9 @@ const defaultState = {
   profile: guestProfile,
   applications: [],
   saved: [],
-  profileExperience: [
-    { id: 1, title: "Frontend Project Lead", company: "Campus Dev Guild", years: "10 mos", period: "2025-Present" },
-    { id: 2, title: "Freelance Web Builder", company: "Student Projects", years: "1 yr", period: "2024-2025" },
-  ],
-  profileCertificates: [
-    { id: 1, title: "Meta Front-End Developer Certificate", source: "Meta", date: "Completed Apr 10, 2026" },
-    { id: 2, title: "SQL for Data Reporting", source: "Coursera", date: "Completed Mar 22, 2026" },
-  ],
-  volunteerActivities: [
-    { id: 1, org: "Code for Philippines", role: "Web Dev Volunteer", status: "Active", last: "Last activity: May 18, 2026" },
-    { id: 2, org: "Teaching Kids Coding", role: "Instructor Volunteer", status: "Inactive", last: "Last activity: Mar 5, 2026" },
-  ],
+  profileExperience: [],
+  profileCertificates: [],
+  volunteerActivities: [],
   adminUsers: [
     { id: 1, name: "Recent Applicant", role: "Applicant", status: "Active", joined: "May 12, 2026" },
     { id: 2, name: "Brightlane Labs", role: "Employer", status: "Pending", joined: "May 18, 2026" },
@@ -793,8 +784,13 @@ function App() {
   const [state, setState] = useState(defaultState);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeAnnouncement, setActiveAnnouncement] = useState(0);
-  const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", role: "Applicant" });
+  const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "Applicant" });
   const [authFeedback, setAuthFeedback] = useState("");
+  const [experienceForm, setExperienceForm] = useState({ title: "", company: "", period: "", years: "" });
+  const [certificateForm, setCertificateForm] = useState({ title: "", source: "", date: "", photoName: "", photoPreview: "" });
+  const [volunteerForm, setVolunteerForm] = useState({ org: "", role: "", status: "Active", last: "" });
+  const [passwordForm, setPasswordForm] = useState({ password: "", confirmPassword: "" });
+  const [passwordFeedback, setPasswordFeedback] = useState("");
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -880,7 +876,22 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthFeedback("");
+        setAuthForm((current) => ({
+          ...current,
+          email: session?.user?.email ?? current.email,
+          password: "",
+          confirmPassword: "",
+        }));
+        setState((current) => ({
+          ...current,
+          authModalOpen: true,
+          authMode: "reset",
+        }));
+      }
+
       syncFromSession(session).catch(() => {});
     });
 
@@ -1184,6 +1195,53 @@ function App() {
     }));
   }
 
+  function patchExperienceForm(field, value) {
+    setExperienceForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function patchCertificateForm(field, value) {
+    setCertificateForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function patchVolunteerForm(field, value) {
+    setVolunteerForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function patchPasswordForm(field, value) {
+    setPasswordForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleCertificatePhotoChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setAuthFeedback("Upload an image file for the certificate proof.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 1.5 * 1024 * 1024) {
+      setAuthFeedback("Certificate proof images must be 1.5 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const photoPreview = await readFileAsDataUrl(file);
+      setCertificateForm((current) => ({
+        ...current,
+        photoName: file.name,
+        photoPreview,
+      }));
+      setAuthFeedback("");
+    } catch (error) {
+      setAuthFeedback(error instanceof Error ? error.message : "Unable to load the certificate image.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
   async function refreshRecommendations(profileOverride, aiProfileOverride) {
     if (!hasSupabaseConfig) {
       throw new Error("Supabase is not configured for AI recommendations.");
@@ -1256,8 +1314,9 @@ function App() {
     setAuthFeedback("");
     setAuthForm({
       name: mode === "signup" ? state.auth.accountName : "",
-      email: mode === "login" ? state.auth.accountEmail : "",
+      email: mode === "login" || mode === "forgot" ? state.auth.accountEmail : "",
       password: "",
+      confirmPassword: "",
       role: mode === "signup" ? state.auth.accountRole ?? "Applicant" : "Applicant",
     });
     setState((current) => ({
@@ -1276,10 +1335,20 @@ function App() {
   }
 
   function updateAdminCollection(key, itemId, field, value) {
-    setState((current) => ({
-      ...current,
-      [key]: current[key].map((item) => (item.id === itemId ? { ...item, [field]: value } : item)),
-    }));
+    setState((current) => {
+      const nextState = {
+        ...current,
+        [key]: current[key].map((item) => (item.id === itemId ? { ...item, [field]: value } : item)),
+      };
+
+      if (key === "adminCertifications" && field === "status") {
+        nextState.profileCertificates = current.profileCertificates.map((item) =>
+          item.id === itemId ? { ...item, status: value } : item,
+        );
+      }
+
+      return nextState;
+    });
   }
 
   function applyToJob(jobId) {
@@ -1464,9 +1533,33 @@ function App() {
 
       const parsed = response.parsedProfile ?? {};
       const parsedSkills = Array.isArray(parsed.skills) && parsed.skills.length > 0 ? parsed.skills : profileSnapshot.skills;
+      const parsedFullName = String(parsed.full_name || "").trim();
+      const parsedFirstName = String(parsed.first_name || "").trim();
+      const parsedLastName = String(parsed.last_name || "").trim();
+      const parsedLocation = Array.isArray(parsed.preferred_locations) && parsed.preferred_locations.length > 0
+        ? parsed.preferred_locations[0]
+        : profileSnapshot.location;
+      const parsedExperienceEntries = Array.isArray(parsed.experience_entries)
+        ? parsed.experience_entries
+            .filter((item) => item && (item.title || item.company))
+            .map((item, index) => ({
+              id: Date.now() + index,
+              title: item.title || "Resume experience",
+              company: item.company || "Resume entry",
+              period: item.period || "From uploaded resume",
+              years: item.years || "Imported",
+            }))
+        : [];
+      const nextFullName = parsedFullName || profileSnapshot.fullName;
+      const nextFirstName = parsedFirstName || nextFullName.split(" ")[0] || profileSnapshot.firstName;
+      const nextLastName = parsedLastName || nextFullName.split(" ").slice(1).join(" ") || profileSnapshot.lastName;
       const nextProfile = {
         ...profileSnapshot,
+        fullName: nextFullName,
+        firstName: nextFirstName,
+        lastName: nextLastName,
         jobTitle: parsed.headline || profileSnapshot.jobTitle,
+        location: parsedLocation,
         about: parsed.summary || profileSnapshot.about,
         skills: parsedSkills,
         resumeText,
@@ -1480,7 +1573,12 @@ function App() {
 
       setState((current) => ({
         ...current,
+        auth: {
+          ...current.auth,
+          accountName: nextFullName || current.auth.accountName,
+        },
         profile: nextProfile,
+        profileExperience: parsedExperienceEntries.length > 0 ? parsedExperienceEntries : current.profileExperience,
         profileSavedAt: `Analyzed ${getTodayShortDate()}`,
         aiStatus: {
           ...current.aiStatus,
@@ -1545,51 +1643,132 @@ function App() {
     }));
   }
 
+  async function changePasswordFromProfile() {
+    if (!passwordForm.password.trim()) {
+      setPasswordFeedback("Enter your new password.");
+      return;
+    }
+
+    if (passwordForm.password.length < 8) {
+      setPasswordFeedback("Use at least 8 characters for your new password.");
+      return;
+    }
+
+    if (passwordForm.password !== passwordForm.confirmPassword) {
+      setPasswordFeedback("Your new password and confirmation must match.");
+      return;
+    }
+
+    if (hasSupabaseConfig && supabase) {
+      const { error } = await supabase.auth.updateUser({
+        password: passwordForm.password,
+      });
+
+      if (error) {
+        setPasswordFeedback(error.message || "Unable to update your password.");
+        return;
+      }
+    }
+
+    setPasswordFeedback("Password updated successfully.");
+    setPasswordForm({ password: "", confirmPassword: "" });
+
+    if (!hasSupabaseConfig) {
+      setState((current) => ({
+        ...current,
+        auth: {
+          ...current.auth,
+          password: passwordForm.password,
+        },
+      }));
+    }
+  }
+
   function addExperienceCard() {
+    if (!experienceForm.title.trim() || !experienceForm.company.trim()) {
+      setAuthFeedback("Add at least an experience title and organization before saving it.");
+      return;
+    }
+
+    const experienceEntry = {
+      id: Date.now(),
+      title: experienceForm.title.trim(),
+      company: experienceForm.company.trim(),
+      years: experienceForm.years.trim() || "In progress",
+      period: experienceForm.period.trim() || "Date not specified",
+    };
+
     setState((current) => ({
       ...current,
-      profileExperience: [
-        ...current.profileExperience,
-        {
-          id: Date.now(),
-          title: "OJT Candidate Project",
-          company: "Stepbridge Portfolio Lab",
-          years: "New",
-          period: "2026",
-        },
-      ],
+      profileExperience: [...current.profileExperience, experienceEntry],
     }));
+
+    setAuthFeedback("");
+    setExperienceForm({ title: "", company: "", period: "", years: "" });
   }
 
   function addCertificateCard() {
+    if (!certificateForm.title.trim() || !certificateForm.source.trim()) {
+      setAuthFeedback("Add the certificate title and provider before submitting it for review.");
+      return;
+    }
+
+    if (!certificateForm.photoPreview) {
+      setAuthFeedback("Upload a certificate photo before submitting it for review.");
+      return;
+    }
+
+    const certificateEntry = {
+      id: Date.now(),
+      title: certificateForm.title.trim(),
+      source: certificateForm.source.trim(),
+      date: certificateForm.date.trim() || `Submitted ${getTodayLongDate()}`,
+      status: "Pending",
+      photoName: certificateForm.photoName,
+      photoPreview: certificateForm.photoPreview,
+    };
+
     setState((current) => ({
       ...current,
-      profileCertificates: [
-        ...current.profileCertificates,
+      profileCertificates: [...current.profileCertificates, certificateEntry],
+      adminCertifications: [
         {
-          id: Date.now(),
-          title: "New Certificate Placeholder",
-          source: "Add provider details",
-          date: "Update completion date",
+          id: certificateEntry.id,
+          title: certificateEntry.title,
+          provider: certificateEntry.source,
+          status: "Pending",
+          photoName: certificateEntry.photoName,
+          photoPreview: certificateEntry.photoPreview,
         },
+        ...current.adminCertifications,
       ],
     }));
+
+    setAuthFeedback("");
+    setCertificateForm({ title: "", source: "", date: "", photoName: "", photoPreview: "" });
   }
 
   function addVolunteerCard() {
+    if (!volunteerForm.org.trim() || !volunteerForm.role.trim()) {
+      setAuthFeedback("Add the organization and your volunteer role before saving it.");
+      return;
+    }
+
+    const volunteerEntry = {
+      id: Date.now(),
+      org: volunteerForm.org.trim(),
+      role: volunteerForm.role.trim(),
+      status: volunteerForm.status,
+      last: volunteerForm.last.trim() || `Last activity: ${getTodayLongDate()}`,
+    };
+
     setState((current) => ({
       ...current,
-      volunteerActivities: [
-        ...current.volunteerActivities,
-        {
-          id: Date.now(),
-          org: "New Volunteer Organization",
-          role: "Community Contributor",
-          status: "Active",
-          last: `Last activity: ${getTodayLongDate()}`,
-        },
-      ],
+      volunteerActivities: [...current.volunteerActivities, volunteerEntry],
     }));
+
+    setAuthFeedback("");
+    setVolunteerForm({ org: "", role: "", status: "Active", last: "" });
   }
 
   function importLinkedInProfile() {
@@ -1622,6 +1801,64 @@ function App() {
 
   async function submitAuth(event) {
     event.preventDefault();
+
+    if (state.authMode === "forgot") {
+      if (!authForm.email.trim()) {
+        setAuthFeedback("Enter your email so we can send a password reset link.");
+        return;
+      }
+
+      if (hasSupabaseConfig && supabase) {
+        const { error } = await supabase.auth.resetPasswordForEmail(authForm.email.trim(), {
+          redirectTo: window.location.origin,
+        });
+
+        if (error) {
+          setAuthFeedback(error.message || "Unable to send the password reset email.");
+          return;
+        }
+
+        setAuthFeedback("Password reset email sent. Open the link in your email to set a new password.");
+        return;
+      }
+
+      setAuthFeedback("Password reset requires Supabase to be configured.");
+      return;
+    }
+
+    if (state.authMode === "reset") {
+      if (!authForm.password.trim()) {
+        setAuthFeedback("Enter your new password.");
+        return;
+      }
+
+      if (authForm.password !== authForm.confirmPassword) {
+        setAuthFeedback("Your new password and confirmation must match.");
+        return;
+      }
+
+      if (hasSupabaseConfig && supabase) {
+        const { error } = await supabase.auth.updateUser({
+          password: authForm.password,
+        });
+
+        if (error) {
+          setAuthFeedback(error.message || "Unable to update your password.");
+          return;
+        }
+
+        setAuthFeedback("");
+        setState((current) => ({
+          ...current,
+          authModalOpen: false,
+          authMode: "login",
+        }));
+        return;
+      }
+
+      setAuthFeedback("Password reset requires Supabase to be configured.");
+      return;
+    }
 
     if (state.authMode === "login") {
       if (!authForm.email.trim() || !authForm.password.trim()) {
@@ -1974,10 +2211,18 @@ function App() {
                     <div className="application-copy">
                       <h3>{item.title}</h3>
                       <p>{item.provider}</p>
-                      <span>Certification directory review</span>
+                      <span>{item.photoName ? `Proof attached: ${item.photoName}` : "Certification directory review"}</span>
                     </div>
                     <span className={`status-badge ${item.status === "Approved" ? "ready" : item.status === "Rejected" ? "saved" : "reviewed"}`}>{item.status}</span>
                   </div>
+                  {item.photoPreview ? (
+                    <div className="certificate-proof-block">
+                      <img src={item.photoPreview} alt={`${item.title} certificate proof`} className="certificate-proof-image" />
+                      <a className="auth-inline-link" href={item.photoPreview} target="_blank" rel="noreferrer">
+                        Open proof image
+                      </a>
+                    </div>
+                  ) : null}
                   <div className="application-actions">
                     <button className="ghost-action" type="button" onClick={() => updateAdminCollection("adminCertifications", item.id, "status", "Approved")}>
                       Approve
@@ -3012,21 +3257,89 @@ function App() {
 
                   <div className="profile-list-block">
                     <span className="profile-label">Experience</span>
-                    <div className="profile-card-list">
-                      {state.profileExperience.map((item) => (
-                        <div key={item.id} className="profile-mini-card">
-                          <div>
-                            <strong>{item.title}</strong>
-                            <p>
-                              {item.company} | {item.period}
-                            </p>
+                    {state.profileExperience.length > 0 ? (
+                      <div className="profile-card-list">
+                        {state.profileExperience.map((item) => (
+                          <div key={item.id} className="profile-mini-card">
+                            <div>
+                              <strong>{item.title}</strong>
+                              <p>
+                                {item.company} | {item.period}
+                              </p>
+                            </div>
+                            <span>{item.years}</span>
                           </div>
-                          <span>{item.years}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="profile-empty-card">No experience added yet.</div>
+                    )}
+                    <div className="profile-entry-grid">
+                      <label className="profile-field">
+                        <span>Role</span>
+                        <div className="profile-input-wrap">
+                          <BriefcaseBusiness size={14} />
+                          <input value={experienceForm.title} onChange={(event) => patchExperienceForm("title", event.target.value)} placeholder="Embedded Systems Intern" />
                         </div>
-                      ))}
+                      </label>
+                      <label className="profile-field">
+                        <span>Organization</span>
+                        <div className="profile-input-wrap">
+                          <Globe size={14} />
+                          <input value={experienceForm.company} onChange={(event) => patchExperienceForm("company", event.target.value)} placeholder="Company or school org" />
+                        </div>
+                      </label>
+                      <label className="profile-field">
+                        <span>Period</span>
+                        <div className="profile-input-wrap">
+                          <FileText size={14} />
+                          <input value={experienceForm.period} onChange={(event) => patchExperienceForm("period", event.target.value)} placeholder="Jun 2026 - Aug 2026" />
+                        </div>
+                      </label>
+                      <label className="profile-field">
+                        <span>Duration</span>
+                        <div className="profile-input-wrap">
+                          <LineChart size={14} />
+                          <input value={experienceForm.years} onChange={(event) => patchExperienceForm("years", event.target.value)} placeholder="3 mos" />
+                        </div>
+                      </label>
                     </div>
                     <button className="profile-dashed-button" type="button" onClick={addExperienceCard}>
-                      + Add Experience
+                      Add Experience
+                    </button>
+                  </div>
+
+                  <div className="profile-list-block">
+                    <span className="profile-label">Change Password</span>
+                    <div className="profile-entry-grid">
+                      <label className="profile-field">
+                        <span>New Password</span>
+                        <div className="profile-input-wrap">
+                          <ShieldCheck size={14} />
+                          <input
+                            type="password"
+                            value={passwordForm.password}
+                            onChange={(event) => patchPasswordForm("password", event.target.value)}
+                            placeholder="Enter a new password"
+                          />
+                        </div>
+                      </label>
+                      <label className="profile-field">
+                        <span>Confirm Password</span>
+                        <div className="profile-input-wrap">
+                          <ShieldCheck size={14} />
+                          <input
+                            type="password"
+                            value={passwordForm.confirmPassword}
+                            onChange={(event) => patchPasswordForm("confirmPassword", event.target.value)}
+                            placeholder="Confirm your new password"
+                          />
+                        </div>
+                      </label>
+                    </div>
+                    {passwordFeedback ? <p className="auth-feedback">{passwordFeedback}</p> : null}
+                    <button className="profile-dashed-button" type="button" onClick={changePasswordFromProfile}>
+                      Update Password
                     </button>
                   </div>
 
@@ -3056,42 +3369,122 @@ function App() {
                   </div>
 
                   <div className="profile-list-block">
-                    <span className="profile-label">Completed Certificates</span>
-                    <div className="profile-card-list">
-                      {state.profileCertificates.map((item) => (
-                        <div key={item.id} className="profile-mini-card">
-                          <div>
-                            <strong>{item.title}</strong>
-                            <p>
-                              {item.source} | {item.date}
-                            </p>
+                    <span className="profile-label">Certificates</span>
+                    {state.profileCertificates.length > 0 ? (
+                      <div className="profile-card-list">
+                        {state.profileCertificates.map((item) => (
+                          <div key={item.id} className="profile-mini-card">
+                            <div>
+                              <div className="profile-inline-heading">
+                                <strong>{item.title}</strong>
+                                <span className={`status-badge ${item.status === "Approved" ? "ready" : item.status === "Rejected" ? "saved" : "reviewed"}`}>
+                                  {item.status || "Pending"}
+                                </span>
+                              </div>
+                              <p>
+                                {item.source} | {item.date}
+                              </p>
+                              {item.photoName ? <p>Proof attached: {item.photoName}</p> : null}
+                            </div>
+                            {item.photoPreview ? <img src={item.photoPreview} alt={`${item.title} certificate proof`} className="certificate-proof-thumb" /> : null}
                           </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="profile-empty-card">No certificates submitted yet.</div>
+                    )}
+                    <div className="profile-entry-grid">
+                      <label className="profile-field">
+                        <span>Certificate</span>
+                        <div className="profile-input-wrap">
+                          <ShieldCheck size={14} />
+                          <input value={certificateForm.title} onChange={(event) => patchCertificateForm("title", event.target.value)} placeholder="AWS Cloud Practitioner" />
                         </div>
-                      ))}
+                      </label>
+                      <label className="profile-field">
+                        <span>Provider</span>
+                        <div className="profile-input-wrap">
+                          <BookOpen size={14} />
+                          <input value={certificateForm.source} onChange={(event) => patchCertificateForm("source", event.target.value)} placeholder="AWS / Coursera / school" />
+                        </div>
+                      </label>
+                      <label className="profile-field full">
+                        <span>Completion or Issue Date</span>
+                        <div className="profile-input-wrap">
+                          <FileText size={14} />
+                          <input value={certificateForm.date} onChange={(event) => patchCertificateForm("date", event.target.value)} placeholder="May 2026" />
+                        </div>
+                      </label>
+                      <label className="profile-field full">
+                        <span>Certificate Photo</span>
+                        <label className="certificate-upload-box">
+                          <input type="file" accept="image/*" onChange={handleCertificatePhotoChange} />
+                          <span>{certificateForm.photoName || "Upload a clear certificate image for admin review"}</span>
+                        </label>
+                        {certificateForm.photoPreview ? <img src={certificateForm.photoPreview} alt="Certificate upload preview" className="certificate-proof-image" /> : null}
+                      </label>
                     </div>
                     <button className="profile-dashed-button" type="button" onClick={addCertificateCard}>
-                      + Add Certificate
+                      Submit Certificate for Review
                     </button>
                   </div>
 
                   <div className="profile-list-block">
                     <span className="profile-label">Volunteer Activities</span>
-                    <div className="profile-card-list">
-                      {state.volunteerActivities.map((item) => (
-                        <div key={item.id} className="profile-mini-card">
-                          <div>
-                            <div className="profile-inline-heading">
-                              <strong>{item.org}</strong>
-                              <span className={`status-badge ${item.status === "Active" ? "ready" : "saved"}`}>{item.status}</span>
+                    {state.volunteerActivities.length > 0 ? (
+                      <div className="profile-card-list">
+                        {state.volunteerActivities.map((item) => (
+                          <div key={item.id} className="profile-mini-card">
+                            <div>
+                              <div className="profile-inline-heading">
+                                <strong>{item.org}</strong>
+                                <span className={`status-badge ${item.status === "Active" ? "ready" : "saved"}`}>{item.status}</span>
+                              </div>
+                              <p>{item.role}</p>
+                              <p>{item.last}</p>
                             </div>
-                            <p>{item.role}</p>
-                            <p>{item.last}</p>
                           </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="profile-empty-card">No volunteer activities added yet.</div>
+                    )}
+                    <div className="profile-entry-grid">
+                      <label className="profile-field">
+                        <span>Organization</span>
+                        <div className="profile-input-wrap">
+                          <Users size={14} />
+                          <input value={volunteerForm.org} onChange={(event) => patchVolunteerForm("org", event.target.value)} placeholder="Code for the Philippines" />
                         </div>
-                      ))}
+                      </label>
+                      <label className="profile-field">
+                        <span>Role</span>
+                        <div className="profile-input-wrap">
+                          <User size={14} />
+                          <input value={volunteerForm.role} onChange={(event) => patchVolunteerForm("role", event.target.value)} placeholder="Volunteer Developer" />
+                        </div>
+                      </label>
+                      <label className="profile-field">
+                        <span>Status</span>
+                        <div className="profile-input-wrap">
+                          <BadgeCheck size={14} />
+                          <select value={volunteerForm.status} onChange={(event) => patchVolunteerForm("status", event.target.value)}>
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                            <option value="Completed">Completed</option>
+                          </select>
+                        </div>
+                      </label>
+                      <label className="profile-field">
+                        <span>Last Activity</span>
+                        <div className="profile-input-wrap">
+                          <FileText size={14} />
+                          <input value={volunteerForm.last} onChange={(event) => patchVolunteerForm("last", event.target.value)} placeholder="Last activity: May 28, 2026" />
+                        </div>
+                      </label>
                     </div>
                     <button className="profile-dashed-button" type="button" onClick={addVolunteerCard}>
-                      + Add Volunteer Activity
+                      Add Volunteer Activity
                     </button>
                   </div>
                 </div>
@@ -3166,10 +3559,28 @@ function App() {
           <aside className="profile-panel auth-panel" onClick={(event) => event.stopPropagation()}>
             <div className="profile-panel-header">
               <div className="profile-panel-user">
-                <div className="sidebar-avatar large">{state.authMode === "login" ? "IN" : "UP"}</div>
+                <div className="sidebar-avatar large">
+                  {state.authMode === "signup" ? "UP" : state.authMode === "forgot" ? "FP" : state.authMode === "reset" ? "RP" : "IN"}
+                </div>
                 <div>
-                  <strong>{state.authMode === "login" ? "Login" : "Create Account"}</strong>
-                  <span>{state.authMode === "login" ? "Access your Stepbridge profile" : "Start applying and saving roles"}</span>
+                  <strong>
+                    {state.authMode === "signup"
+                      ? "Create Account"
+                      : state.authMode === "forgot"
+                        ? "Forgot Password"
+                        : state.authMode === "reset"
+                          ? "Reset Password"
+                          : "Login"}
+                  </strong>
+                  <span>
+                    {state.authMode === "signup"
+                      ? "Start applying and saving roles"
+                      : state.authMode === "forgot"
+                        ? "Send a secure reset link to your email"
+                        : state.authMode === "reset"
+                          ? "Choose a new password for your account"
+                          : "Access your Stepbridge profile"}
+                  </span>
                 </div>
               </div>
               <button className="profile-close" type="button" onClick={closeAuthModal}>
@@ -3179,22 +3590,24 @@ function App() {
 
             <div className="profile-panel-body">
               <form className="profile-section-stack" onSubmit={submitAuth}>
-                <div className="auth-switch-row">
-                  <button
-                    className={`profile-tab${state.authMode === "login" ? " active" : ""}`}
-                    type="button"
-                    onClick={() => openAuthModal("login")}
-                  >
-                    Login
-                  </button>
-                  <button
-                    className={`profile-tab${state.authMode === "signup" ? " active" : ""}`}
-                    type="button"
-                    onClick={() => openAuthModal("signup")}
-                  >
-                    Sign Up
-                  </button>
-                </div>
+                {(state.authMode === "login" || state.authMode === "signup") && (
+                  <div className="auth-switch-row">
+                    <button
+                      className={`profile-tab${state.authMode === "login" ? " active" : ""}`}
+                      type="button"
+                      onClick={() => openAuthModal("login")}
+                    >
+                      Login
+                    </button>
+                    <button
+                      className={`profile-tab${state.authMode === "signup" ? " active" : ""}`}
+                      type="button"
+                      onClick={() => openAuthModal("signup")}
+                    >
+                      Sign Up
+                    </button>
+                  </div>
+                )}
 
                 {state.authMode === "signup" && (
                   <>
@@ -3232,24 +3645,65 @@ function App() {
                   </div>
                 </label>
 
-                <label className="profile-field full">
-                  <span>Password</span>
-                  <div className="profile-input-wrap">
-                    <ShieldCheck size={14} />
-                    <input
-                      type="password"
-                      value={authForm.password}
-                      onChange={(event) => patchAuthForm("password", event.target.value)}
-                      placeholder={state.authMode === "login" ? "Enter your password" : "Create a password"}
-                    />
-                  </div>
-                </label>
+                {state.authMode !== "forgot" && (
+                  <label className="profile-field full">
+                    <span>{state.authMode === "reset" ? "New Password" : "Password"}</span>
+                    <div className="profile-input-wrap">
+                      <ShieldCheck size={14} />
+                      <input
+                        type="password"
+                        value={authForm.password}
+                        onChange={(event) => patchAuthForm("password", event.target.value)}
+                        placeholder={
+                          state.authMode === "login"
+                            ? "Enter your password"
+                            : state.authMode === "reset"
+                              ? "Enter your new password"
+                              : "Create a password"
+                        }
+                      />
+                    </div>
+                  </label>
+                )}
+
+                {state.authMode === "reset" && (
+                  <label className="profile-field full">
+                    <span>Confirm Password</span>
+                    <div className="profile-input-wrap">
+                      <ShieldCheck size={14} />
+                      <input
+                        type="password"
+                        value={authForm.confirmPassword}
+                        onChange={(event) => patchAuthForm("confirmPassword", event.target.value)}
+                        placeholder="Confirm your new password"
+                      />
+                    </div>
+                  </label>
+                )}
+
+                {state.authMode === "login" && (
+                  <button className="auth-inline-link" type="button" onClick={() => openAuthModal("forgot")}>
+                    Forgot your password?
+                  </button>
+                )}
+
+                {(state.authMode === "forgot" || state.authMode === "reset") && (
+                  <button className="auth-inline-link" type="button" onClick={() => openAuthModal("login")}>
+                    Back to login
+                  </button>
+                )}
 
                 {authFeedback && <p className="auth-feedback">{authFeedback}</p>}
 
                 <div className="profile-action-row">
                   <button className="profile-primary-button" type="submit">
-                    {state.authMode === "login" ? "Login" : "Create Account"}
+                    {state.authMode === "login"
+                      ? "Login"
+                      : state.authMode === "signup"
+                        ? "Create Account"
+                        : state.authMode === "forgot"
+                          ? "Send Reset Link"
+                          : "Update Password"}
                   </button>
                   <button className="profile-danger-button" type="button" onClick={closeAuthModal}>
                     Cancel
@@ -3413,6 +3867,15 @@ function getCurrentUploadLabel() {
     hour: "numeric",
     minute: "2-digit",
   })}`;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Unable to read the selected file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function getTodayShortDate() {

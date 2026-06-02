@@ -153,6 +153,59 @@ function inferProjects(text: string) {
     .slice(0, 4);
 }
 
+function inferName(text: string) {
+  const line = text
+    .split("\n")
+    .map((item) => item.trim())
+    .find((item) => item.length > 3 && item.length < 50 && /^[A-Za-z.,' -]+$/.test(item));
+
+  if (!line) return "";
+
+  const normalized = line.replace(/\s+/g, " ").trim();
+  const words = normalized.split(" ").filter(Boolean);
+  if (words.length < 2 || words.length > 5) return "";
+
+  return normalized
+    .split(" ")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function inferLocation(text: string) {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const locationLine = lines.find((line) => {
+    const lower = line.toLowerCase();
+    return lower.includes("philippines") || lower.includes("city") || lower.includes("manila") || lower.includes("cebu") || lower.includes("quezon");
+  });
+
+  return locationLine ?? "";
+}
+
+function inferExperienceEntries(text: string) {
+  const lines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return lines
+    .filter((line) => {
+      const lower = line.toLowerCase();
+      return lower.includes("intern") || lower.includes("engineer") || lower.includes("developer") || lower.includes("project");
+    })
+    .slice(0, 4)
+    .map((line, index) => ({
+      id: Date.now() + index,
+      title: line.split("|")[0]?.trim() || line,
+      company: line.split("|")[1]?.trim() || "Resume entry",
+      period: line.split("|")[2]?.trim() || "From uploaded resume",
+      years: "Imported",
+    }));
+}
+
 function inferHeadline(skills: string[], existingProfile: Record<string, unknown>) {
   const currentTitle = String(existingProfile.jobTitle ?? "").trim();
   if (currentTitle) return currentTitle;
@@ -193,8 +246,14 @@ function buildFallbackProfile(resumeText: string, fileName: string, existingProf
   const skills = inferSkills(resumeText);
   const education = inferEducation(resumeText);
   const projects = inferProjects(resumeText);
+  const fullName = inferName(resumeText);
+  const preferredLocation = inferLocation(resumeText);
+  const experienceEntries = inferExperienceEntries(resumeText);
 
   return {
+    full_name: fullName,
+    first_name: fullName.split(" ")[0] || "",
+    last_name: fullName.split(" ").slice(1).join(" ") || "",
     headline: inferHeadline(skills, existingProfile),
     summary: inferSummary(skills, education, projects),
     skills,
@@ -203,10 +262,11 @@ function buildFallbackProfile(resumeText: string, fileName: string, existingProf
     education,
     certifications: [],
     projects,
-    preferred_locations: [],
+    preferred_locations: preferredLocation ? [preferredLocation] : [],
     strengths: skills.slice(0, 5),
     improvement_skills: inferImprovementSkills(skills),
     keywords: skills,
+    experience_entries: experienceEntries,
     sourceFileName: fileName,
     usedFallback: true,
   };
@@ -293,6 +353,9 @@ ${trimmedResumeText}
 
 Return valid JSON only with this exact shape:
 {
+  "full_name": "full name from resume if available",
+  "first_name": "first name",
+  "last_name": "last name",
   "headline": "short role headline",
   "summary": "2-3 sentence profile summary",
   "skills": ["skill"],
@@ -302,6 +365,14 @@ Return valid JSON only with this exact shape:
   "certifications": ["certification"],
   "projects": ["project summary"],
   "preferred_locations": ["location"],
+  "experience_entries": [
+    {
+      "title": "role title",
+      "company": "company or organization",
+      "period": "date range",
+      "years": "duration label"
+    }
+  ],
   "strengths": ["strength"],
   "improvement_skills": ["skill gap"],
   "keywords": ["keyword"]
@@ -335,11 +406,15 @@ Rules:
           preferred_locations: dedupe(
             Array.isArray(parsed.preferred_locations) ? parsed.preferred_locations : fallbackProfile.preferred_locations,
           ),
+          experience_entries: Array.isArray(parsed.experience_entries) ? parsed.experience_entries : fallbackProfile.experience_entries,
           strengths: dedupe(Array.isArray(parsed.strengths) ? parsed.strengths : fallbackProfile.strengths),
           improvement_skills: dedupe(
             Array.isArray(parsed.improvement_skills) ? parsed.improvement_skills : fallbackProfile.improvement_skills,
           ),
           keywords: dedupe(Array.isArray(parsed.keywords) ? parsed.keywords : fallbackProfile.keywords),
+          full_name: String(parsed.full_name ?? fallbackProfile.full_name),
+          first_name: String(parsed.first_name ?? fallbackProfile.first_name),
+          last_name: String(parsed.last_name ?? fallbackProfile.last_name),
           summary: String(parsed.summary ?? fallbackProfile.summary),
           headline: String(parsed.headline ?? fallbackProfile.headline),
           sourceFileName: fileName,

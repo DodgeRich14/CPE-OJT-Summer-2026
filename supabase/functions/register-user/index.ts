@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
     const { email, password, fullName, firstName, lastName, role } = await req.json();
 
     if (!email || !password || !fullName) {
-      return jsonResponse({ error: "Email, password, and full name are required." }, 400);
+      return jsonResponse({ success: false, error: "Email, password, and full name are required." });
     }
 
     const normalizedRole = ["Applicant", "Employer", "Admin"].includes(role) ? role : "Applicant";
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     }
 
     if (existingProfile) {
-      return jsonResponse({ error: "An account with this email already exists. Log in instead." }, 409);
+      return jsonResponse({ success: false, error: "An account with this email already exists. Log in instead." });
     }
 
     const { data, error } = await admin.auth.admin.createUser({
@@ -73,10 +73,10 @@ Deno.serve(async (req) => {
       const normalizedMessage = error.message.toLowerCase();
 
       if (normalizedMessage.includes("already") || normalizedMessage.includes("duplicate")) {
-        return jsonResponse({ error: "An account with this email already exists. Log in instead." }, 409);
+        return jsonResponse({ success: false, error: "An account with this email already exists. Log in instead." });
       }
 
-      return jsonResponse({ error: error.message }, 400);
+      return jsonResponse({ success: false, error: error.message });
     }
 
     return jsonResponse({
