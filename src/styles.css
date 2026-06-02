@@ -808,6 +808,8 @@ button {
   border-radius: 14px;
   color: #fff;
   background: linear-gradient(135deg, #6761df, #736dff);
+  background-size: 180% 180%;
+  animation: gradient-drift 7s ease infinite;
 }
 
 .mentor-card,
@@ -1289,6 +1291,8 @@ button {
   border: 0;
   color: #fff;
   background: linear-gradient(135deg, #6761df, #736dff);
+  background-size: 180% 180%;
+  animation: gradient-drift 7s ease infinite;
 }
 
 .profile-primary-button.small {
@@ -1754,12 +1758,45 @@ button {
   gap: 14px;
   margin-bottom: 16px;
   padding: var(--card-padding);
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 20px;
   background:
-    radial-gradient(circle at top right, rgba(18, 217, 162, 0.08), transparent 34%),
-    radial-gradient(circle at bottom left, rgba(112, 103, 255, 0.12), transparent 38%),
+    radial-gradient(circle at 12% 18%, rgba(112, 103, 255, 0.22), transparent 34%),
+    radial-gradient(circle at 88% 18%, rgba(18, 217, 162, 0.16), transparent 32%),
+    radial-gradient(circle at 45% 110%, rgba(255, 139, 168, 0.12), transparent 34%),
     var(--panel);
+}
+
+.ai-studio-card::before,
+.ai-studio-card::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+}
+
+.ai-studio-card::before {
+  inset: -35%;
+  z-index: -2;
+  background:
+    radial-gradient(ellipse at 18% 32%, rgba(112, 103, 255, 0.32), transparent 28%),
+    radial-gradient(ellipse at 72% 28%, rgba(18, 217, 162, 0.24), transparent 30%),
+    radial-gradient(ellipse at 42% 78%, rgba(255, 139, 168, 0.16), transparent 28%);
+  filter: blur(10px);
+  animation: ai-liquid-flow 16s ease-in-out infinite alternate;
+}
+
+.ai-studio-card::after {
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.025) 18%, transparent 36%),
+    linear-gradient(245deg, transparent 0%, rgba(255, 255, 255, 0.02) 22%, transparent 44%),
+    color-mix(in srgb, var(--panel) 72%, transparent);
+  background-size: 220% 220%, 260% 260%, auto;
+  animation: ai-liquid-sheen 12s ease-in-out infinite;
 }
 
 .ai-studio-head {
@@ -2220,6 +2257,53 @@ button {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes ai-liquid-flow {
+  0%,
+  100% {
+    transform: translate3d(-7%, -4%, 0) scale(1.04) rotate(0deg);
+    border-radius: 42% 58% 55% 45% / 48% 44% 56% 52%;
+    opacity: 0.95;
+  }
+  28% {
+    transform: translate3d(6%, -1%, 0) scale(1.1) rotate(4deg);
+    border-radius: 56% 44% 46% 54% / 42% 58% 42% 58%;
+    opacity: 1;
+  }
+  62% {
+    transform: translate3d(2%, 7%, 0) scale(1.06) rotate(-3deg);
+    border-radius: 45% 55% 60% 40% / 58% 38% 62% 42%;
+    opacity: 0.9;
+  }
+}
+
+@keyframes ai-liquid-sheen {
+  0%,
+  100% {
+    background-position: 0% 45%, 100% 55%, center;
+  }
+  50% {
+    background-position: 100% 58%, 0% 42%, center;
+  }
+}
+
+@keyframes gradient-drift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-studio-card::before,
+  .profile-primary-button,
+  .roadmap-cta {
+    animation: none;
   }
 }
 
