@@ -1594,8 +1594,6 @@ function App() {
           .update(createProfileUpdatePayload(nextProfile))
           .eq("id", state.auth.accountId);
       }
-
-      await refreshRecommendations(nextProfile, parsed);
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -2031,7 +2029,7 @@ function App() {
       </aside>
 
       <main className="dashboard-main">
-        {!state.auth.isAuthenticated && (
+        {!state.auth.isAuthenticated && state.activeSidebar === "discover" && (
           <div className="dashboard-toolbar">
             <button className="auth-entry-button" type="button" onClick={() => openAuthModal("signup")}>
               Login / Sign Up
