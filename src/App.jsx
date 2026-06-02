@@ -916,6 +916,33 @@ function App() {
 
       if (cancelled) return;
 
+      if (profileRecord?.status === "Suspended") {
+        await supabase.auth.signOut();
+
+        if (cancelled) return;
+
+        setAuthFeedback("This account has been suspended. Please contact support or an administrator for assistance.");
+        setState((current) => ({
+          ...current,
+          authModalOpen: true,
+          authMode: "login",
+          activeSidebar: "discover",
+          auth: {
+            ...current.auth,
+            isAuthenticated: false,
+            accountId: "",
+            accountName: "",
+            accountEmail: profileRecord.email || session.user.email || "",
+            accountRole: "Applicant",
+            password: "",
+          },
+          profile: guestProfile,
+          profileCertificates: [],
+          adminCertifications: [],
+        }));
+        return;
+      }
+
       const mappedProfile = mapProfileRecordToState(profileRecord, session.user);
 
       setState((current) => ({
@@ -2226,7 +2253,7 @@ function App() {
       }
 
       if (hasSupabaseConfig && supabase) {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email: authForm.email.trim(),
           password: authForm.password,
         });
@@ -2234,6 +2261,28 @@ function App() {
         if (error) {
           setAuthFeedback(error.message || "Unable to log in with that account.");
           return;
+        }
+
+        const userId = data.user?.id ?? data.session?.user?.id;
+
+        if (userId) {
+          const { data: profileRecord, error: profileError } = await supabase
+            .from("profiles")
+            .select("status, email")
+            .eq("id", userId)
+            .maybeSingle();
+
+          if (profileError) {
+            await supabase.auth.signOut();
+            setAuthFeedback(profileError.message || "Unable to verify your account status.");
+            return;
+          }
+
+          if (profileRecord?.status === "Suspended") {
+            await supabase.auth.signOut();
+            setAuthFeedback("This account has been suspended. Please contact support or an administrator for assistance.");
+            return;
+          }
         }
 
         setAuthFeedback("");
