@@ -42,6 +42,8 @@ const sidebarItems = [
   { id: "certifications", label: "Certifications", icon: ShieldCheck },
 ];
 
+const premiumApplicantPages = ["progress", "roadmap", "mentorship", "certifications"];
+
 const adminSidebarItems = [
   { id: "users", label: "User Management", icon: Users },
   { id: "courses", label: "Course Management", icon: BookOpen },
@@ -791,6 +793,11 @@ const defaultState = {
   theme: "dark",
   activeSidebar: "discover",
   activeCategory: "jobs",
+  subscription: {
+    status: "free",
+    plan: "Free",
+    renewalDate: "",
+  },
   applicationsTab: "applied",
   expandedApplicationId: 1,
   progressTab: "courses",
@@ -993,6 +1000,23 @@ function App() {
   const [passwordForm, setPasswordForm] = useState({ password: "", confirmPassword: "" });
   const [passwordFeedback, setPasswordFeedback] = useState("");
   const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
+  const [isRenewalNoticeDismissed, setIsRenewalNoticeDismissed] = useState(false);
+  const hasActiveSubscription = state.subscription?.status === "active";
+  const renewalDate = state.subscription?.renewalDate ? new Date(state.subscription.renewalDate) : null;
+  const daysBeforeRenewal = renewalDate && !Number.isNaN(renewalDate.getTime())
+    ? Math.ceil((renewalDate - new Date()) / (1000 * 60 * 60 * 24))
+    : null;
+  const showRenewalNotice =
+    !isAdmin &&
+    hasActiveSubscription &&
+    !isRenewalNoticeDismissed &&
+    daysBeforeRenewal !== null &&
+    daysBeforeRenewal >= 0 &&
+    daysBeforeRenewal <= 7;
+
+  useEffect(() => {
+    setIsRenewalNoticeDismissed(false);
+  }, [state.subscription?.status, state.subscription?.renewalDate]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -1039,6 +1063,11 @@ function App() {
             accountRole: "Applicant",
             password: "",
           },
+          subscription: {
+            status: "free",
+            plan: "Free",
+            renewalDate: "",
+          },
           profile: guestProfile,
           profileCertificates: [],
           adminCertifications: [],
@@ -1060,6 +1089,29 @@ function App() {
       }
 
       const mappedProfile = mapProfileRecordToState(profileRecord, session.user);
+      let subscriptionState = {
+        status: "free",
+        plan: "Free",
+        renewalDate: "",
+      };
+
+      if (mappedProfile.role !== "Admin") {
+        const { data: subscriptionRecord } = await supabase
+          .from("subscriptions")
+          .select("plan,status,renewal_date")
+          .eq("user_id", session.user.id)
+          .order("renewal_date", { ascending: false, nullsFirst: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (subscriptionRecord) {
+          subscriptionState = {
+            status: subscriptionRecord.status || "free",
+            plan: subscriptionRecord.plan || "Applicant Premium",
+            renewalDate: subscriptionRecord.renewal_date || "",
+          };
+        }
+      }
 
       setState((current) => ({
         ...current,
@@ -1075,6 +1127,7 @@ function App() {
           accountRole: mappedProfile.role,
           password: "",
         },
+        subscription: subscriptionState,
         profile: mappedProfile,
       }));
     }
@@ -2611,6 +2664,33 @@ function App() {
     }));
   }
 
+  function PremiumLockScreen({ pageName }) {
+    return (
+      <section className="premium-lock-section">
+        <div className="premium-lock-card">
+          <div className="premium-lock-icon">
+            <ShieldCheck size={30} />
+          </div>
+          <span className="section-kicker">Premium feature</span>
+          <h1>{pageName} is for subscribed applicants</h1>
+          <p>
+            You can still browse and apply for jobs for free. Subscribe to SkillBridge Premium to unlock mentorship,
+            personalized roadmaps, progress tracking, and certification resources.
+          </p>
+          <div className="premium-benefits">
+            <span>✔ Personalized career roadmap</span>
+            <span>✔ Mentor-led learning support</span>
+            <span>✔ Certification preparation resources</span>
+            <span>✔ Progress and skill tracking</span>
+          </div>
+          <button className="profile-primary-button" type="button" onClick={() => alert("Subscription checkout will be connected here.")}>
+            Subscribe Now
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className={`dashboard-shell theme-${state.theme}${isAdmin ? " role-admin" : ""}`}>
       <aside className="dashboard-sidebar">
@@ -2629,6 +2709,7 @@ function App() {
               >
                 <Icon size={17} />
                 <span>{label}</span>
+                {!isAdmin && premiumApplicantPages.includes(id) && !hasActiveSubscription && <span className="premium-lock">Premium</span>}
               </button>
             ))}
           </nav>
@@ -2658,11 +2739,37 @@ function App() {
       </aside>
 
       <main className="dashboard-main">
-        {!state.auth.isAuthenticated && state.activeSidebar === "discover" && (
-          <div className="dashboard-toolbar">
-            <button className="auth-entry-button" type="button" onClick={() => openAuthModal("signup")}>
-              Login / Sign Up
+        {!isAdmin && showRenewalNotice && (
+          <div
+            className="subscription-renewal-alert"
+            role="button"
+            tabIndex={0}
+            title="Click to dismiss"
+            onClick={() => setIsRenewalNoticeDismissed(true)}
+            onKeyDown={(event) => {
+              if (["Enter", " ", "Escape"].includes(event.key)) {
+                event.preventDefault();
+                setIsRenewalNoticeDismissed(true);
+              }
+            }}
+          >
+            <button
+              className="subscription-renewal-close"
+              type="button"
+              aria-label="Dismiss subscription renewal reminder"
+              onClick={() => setIsRenewalNoticeDismissed(true)}
+            >
+             ×
             </button>
+
+            <strong>Subscription renewal reminder</strong>
+
+            <p>
+              Your {state.subscription.plan} subscription will renew{" "}
+              {daysBeforeRenewal === 0
+               ? "today"
+               : `in ${daysBeforeRenewal} day${daysBeforeRenewal > 1 ? "s" : ""}`}.
+            </p>
           </div>
         )}
 
@@ -3491,7 +3598,11 @@ function App() {
           </section>
         )}
 
-        {!isAdmin && state.activeSidebar === "progress" && (
+        {!isAdmin && state.activeSidebar === "progress" && !hasActiveSubscription && (
+          <PremiumLockScreen pageName="Progress & Assessment" />
+        )}
+
+        {!isAdmin && state.activeSidebar === "progress" && hasActiveSubscription && (
           <section className="progress-section">
             <div className="applications-head">
               <div>
@@ -3592,7 +3703,11 @@ function App() {
           </section>
         )}
 
-        {!isAdmin && state.activeSidebar === "roadmap" && (
+        {!isAdmin && state.activeSidebar === "roadmap" && !hasActiveSubscription && (
+          <PremiumLockScreen pageName="Career Roadmap" />
+        )}
+
+        {!isAdmin && state.activeSidebar === "roadmap" && hasActiveSubscription && (
           <section className="roadmap-section">
             <div className="applications-head">
               <div>
@@ -3680,7 +3795,11 @@ function App() {
           </section>
         )}
 
-        {!isAdmin && state.activeSidebar === "mentorship" && (
+        {!isAdmin && state.activeSidebar === "mentorship" && !hasActiveSubscription && (
+          <PremiumLockScreen pageName="Mentorship" />
+        )}
+
+        {!isAdmin && state.activeSidebar === "mentorship" && hasActiveSubscription && (
           <section className="mentorship-section">
             <div className="applications-head">
               <div>
@@ -3766,7 +3885,11 @@ function App() {
           </section>
         )}
 
-        {!isAdmin && state.activeSidebar === "certifications" && (
+        {!isAdmin && state.activeSidebar === "certifications" && !hasActiveSubscription && (
+          <PremiumLockScreen pageName="Certifications" />
+        )}
+
+        {!isAdmin && state.activeSidebar === "certifications" && hasActiveSubscription && (
           <section className="certifications-section">
             <div className="applications-head">
               <div>

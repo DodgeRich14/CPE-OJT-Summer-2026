@@ -2393,3 +2393,124 @@ button {
     padding: 12px;
   }
 }
+
+/* Premium access + subscription renewal */
+.premium-lock {
+  margin-left: auto;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.3);
+}
+
+.subscription-renewal-alert {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1000;
+  width: min(460px, calc(100vw - 48px));
+  box-sizing: border-box;
+  min-height: 0;
+  height: auto;
+  margin: 0;
+  padding: 14px 48px 14px 18px;
+  border-radius: 18px;
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.35);
+  color: var(--text-primary);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(14px);
+  cursor: pointer;
+}
+
+.subscription-renewal-close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-primary);
+  background: rgba(250, 204, 21, 0.16);
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.subscription-renewal-close:hover {
+  background: rgba(250, 204, 21, 0.26);
+}
+
+.subscription-renewal-alert strong {
+  display: block;
+  margin: 0 0 6px;
+  line-height: 1.2;
+  color: #facc15;
+}
+
+.subscription-renewal-alert p {
+  margin: 0;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.premium-lock-section {
+  min-height: 70vh;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+}
+
+.premium-lock-card {
+  width: min(620px, 100%);
+  padding: 36px;
+  border-radius: 28px;
+  text-align: center;
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+.premium-lock-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  color: #facc15;
+  background: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.32);
+}
+
+.premium-lock-card h1 {
+  margin: 10px 0;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+}
+
+.premium-lock-card p {
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.premium-benefits {
+  display: grid;
+  gap: 10px;
+  margin: 24px 0;
+  text-align: left;
+}
+
+.premium-benefits span {
+  padding: 12px 14px;
+  border-radius: 14px;
+  color: var(--text-primary);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+}
