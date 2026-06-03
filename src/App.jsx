@@ -569,6 +569,18 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
       ? sanitizeMatchedSkills(recommendation.matched_skills, profileSkills, requiredSkills)
       : getOverlapMatches(profileSkills, requiredSkills);
   const matchedSkills = filterSpecificMatchedSkills(rawMatchedSkills);
+  const serverScore = typeof recommendation?.match_score === "number" ? clampScore(recommendation.match_score, 0, 100) : null;
+
+  if (serverScore !== null) {
+    return {
+      matchedSkills,
+      rawMatchedSkills,
+      score: serverScore,
+      fallbackScore: serverScore,
+      judgeScore: serverScore,
+    };
+  }
+
   const matchedCount = rawMatchedSkills.length;
   const specificRequiredSkills = requiredSkills.filter((skill) => !isGenericSkill(skill));
   const genericRequiredSkills = requiredSkills.filter((skill) => isGenericSkill(skill));

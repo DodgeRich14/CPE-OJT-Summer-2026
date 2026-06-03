@@ -7,6 +7,9 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001";
+const EMBEDDING_BATCH_SIZE = 24;
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -463,6 +466,238 @@ function computeFreshnessScore(postedAt: unknown) {
   return 40;
 }
 
+function computeJobTitleMatchScore(profile: Record<string, unknown>, resumeProfile: Record<string, unknown>, job: Record<string, unknown>) {
+  const targetRoles = [String(profile.jobTitle ?? ""), ...((resumeProfile.suggested_roles ?? []) as string[])].filter(Boolean);
+  const roleTerms = targetRoles
+    .flatMap((value) => String(value).toLowerCase().split(/[^a-z0-9+#.]+/))
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+  const titleTerms = String(job.title ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9+#.]+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+
+  if (roleTerms.length === 0) return 50;
+
+  const overlap = roleTerms.filter((term) => titleTerms.includes(term)).length;
+  let score = overlap > 0 ? (overlap / Math.max(roleTerms.length, 1)) * 100 : 8;
+
+  if (isJuniorProfile(profile, resumeProfile) && isSeniorRole(String(job.title ?? ""))) {
+    score = Math.min(score, 22);
+  }
+
+  return clampScore(Math.round(score), 0, 100);
+}
+
+function computeDescriptionSimilarityScore(
+  profile: Record<string, unknown>,
+  resumeProfile: Record<string, unknown>,
+  job: Record<string, unknown>,
+  requiredSkills: string[],
+  matchedSkills: string[],
+) {
+  const applicantTerms = [
+    String(profile.about ?? ""),
+    String(resumeProfile.summary ?? ""),
+    ...((resumeProfile.strengths ?? []) as string[]),
+    ...((resumeProfile.keywords ?? []) as string[]),
+    ...filterSpecificMatchedSkills((profile.skills ?? []) as string[]),
+  ]
+    .flatMap((value) => String(value).toLowerCase().split(/[^a-z0-9+#.]+/))
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+  const descriptionTerms = new Set(
+    [String(job.description ?? ""), ...((job.responsibilities ?? []) as string[]), ...requiredSkills]
+      .flatMap((value) => String(value).toLowerCase().split(/[^a-z0-9+#.]+/))
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 3),
+  );
+
+  if (applicantTerms.length === 0) return 45;
+
+  const overlap = applicantTerms.filter((term) => descriptionTerms.has(term)).length;
+  let score = overlap > 0 ? (overlap / Math.max(Math.min(applicantTerms.length, 12), 1)) * 100 : 10;
+
+  if (getDomainAlignmentScore(profile, resumeProfile, job, matchedSkills, requiredSkills) < 40) {
+    score = Math.min(score, countSpecificSkills(matchedSkills) > 0 ? 42 : 18);
+  }
+
+  return clampScore(Math.round(score), 0, 100);
+}
+
+function computeLocationMatchScore(profile: Record<string, unknown>, job: Record<string, unknown>) {
+  const profileLocation = String(profile.location ?? "").trim().toLowerCase();
+  const listingText = `${String(job.location ?? "")} ${String(job.work_type ?? "")}`.toLowerCase();
+
+  if (!profileLocation) return 55;
+  if (listingText.includes(profileLocation)) return 100;
+  if (listingText.includes("remote")) return 80;
+  if (listingText.includes("hybrid")) return 65;
+  return 20;
+}
+
+function computeFreshnessScore(postedAt: unknown) {
+  if (!postedAt) return 45;
+
+  const date = new Date(String(postedAt));
+  if (Number.isNaN(date.getTime())) return 45;
+
+  const diffDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)));
+  if (diffDays === 0) return 100;
+  if (diffDays === 1) return 95;
+  if (diffDays <= 3) return 90;
+  if (diffDays <= 7) return 80;
+  if (diffDays <= 14) return 68;
+  if (diffDays <= 30) return 55;
+  return 40;
+}
+
+function trimEmbeddingText(value: string) {
+  return value.replace(/\s+/g, " ").trim().slice(0, 6000);
+}
+
+function buildApplicantEmbeddingText(
+  profile: Record<string, unknown>,
+  resumeProfile: Record<string, unknown>,
+  profileSkills: string[],
+) {
+  return trimEmbeddingText(
+    [
+      `Target role: ${String(profile.jobTitle ?? "")}`,
+      `Location: ${String(profile.location ?? "")}`,
+      `Skills: ${profileSkills.join(", ")}`,
+      `Profile: ${String(profile.about ?? "")}`,
+      `Resume summary: ${String(resumeProfile.summary ?? "")}`,
+      `Suggested roles: ${((resumeProfile.suggested_roles ?? []) as string[]).join(", ")}`,
+      `Strengths: ${((resumeProfile.strengths ?? []) as string[]).join(", ")}`,
+      `Keywords: ${((resumeProfile.keywords ?? []) as string[]).join(", ")}`,
+    ].join("\n"),
+  );
+}
+
+function buildApplicantTitleText(profile: Record<string, unknown>, resumeProfile: Record<string, unknown>) {
+  return trimEmbeddingText(
+    [
+      String(profile.jobTitle ?? ""),
+      ...((resumeProfile.suggested_roles ?? []) as string[]),
+      String(resumeProfile.summary ?? ""),
+    ].join(" | "),
+  );
+}
+
+function buildJobEmbeddingText(job: Record<string, unknown>, requiredSkills: string[]) {
+  return trimEmbeddingText(
+    [
+      `Job title: ${String(job.title ?? "")}`,
+      `Company: ${String(job.company_name ?? "")}`,
+      `Category: ${String(job.category ?? "")}`,
+      `Location: ${String(job.location ?? "")}`,
+      `Work type: ${String(job.work_type ?? "")}`,
+      `Required skills: ${requiredSkills.join(", ")}`,
+      `Description: ${String(job.description ?? "")}`,
+      `Responsibilities: ${((job.responsibilities ?? []) as string[]).join(", ")}`,
+    ].join("\n"),
+  );
+}
+
+function cosineSimilarity(left: number[], right: number[]) {
+  if (left.length === 0 || left.length !== right.length) return null;
+
+  let dotProduct = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+
+  for (let index = 0; index < left.length; index += 1) {
+    dotProduct += left[index] * right[index];
+    leftMagnitude += left[index] * left[index];
+    rightMagnitude += right[index] * right[index];
+  }
+
+  if (leftMagnitude === 0 || rightMagnitude === 0) return null;
+  return dotProduct / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
+}
+
+function semanticSimilarityToScore(similarity: number | null) {
+  if (similarity === null || !Number.isFinite(similarity)) return null;
+
+  // Gemini text embeddings often cluster above zero, so stretch the useful range for clearer ranking.
+  return clampScore(Math.round(((similarity - 0.52) / 0.36) * 100), 0, 100);
+}
+
+async function callGeminiEmbeddings(texts: string[]) {
+  const apiKey = Deno.env.get("GEMINI_API_KEY");
+
+  if (!apiKey || texts.length === 0) {
+    return null;
+  }
+
+  const embeddings: number[][] = [];
+
+  for (let index = 0; index < texts.length; index += EMBEDDING_BATCH_SIZE) {
+    const chunk = texts.slice(index, index + EMBEDDING_BATCH_SIZE);
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/${GEMINI_EMBEDDING_MODEL}:batchEmbedContents`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          requests: chunk.map((text) => ({
+            model: GEMINI_EMBEDDING_MODEL,
+            taskType: "SEMANTIC_SIMILARITY",
+            content: {
+              parts: [{ text: trimEmbeddingText(text) || "empty" }],
+            },
+          })),
+        }),
+      },
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gemini embeddings request failed: ${response.status} ${errorText}`);
+    }
+
+    const payload = await response.json();
+    const chunkEmbeddings = (payload.embeddings ?? [])
+      .map((item: Record<string, unknown>) => (item.values ?? []) as number[])
+      .filter((values: number[]) => values.length > 0);
+
+    if (chunkEmbeddings.length !== chunk.length) {
+      throw new Error("Gemini embeddings returned an incomplete batch.");
+    }
+
+    embeddings.push(...chunkEmbeddings);
+  }
+
+  return embeddings;
+}
+
+function buildRecommendationReason(
+  job: Record<string, unknown>,
+  matchedSkills: string[],
+  skillGaps: string[],
+  descriptionSimilarityScore: number,
+) {
+  const matchedText =
+    matchedSkills.length > 0
+      ? `It matches your profile through ${matchedSkills.slice(0, 3).join(", ")}`
+      : "It has a related career direction, though your direct saved skill evidence is still light";
+  const gapText =
+    skillGaps.length > 0
+      ? `Key gaps to prepare for are ${skillGaps.slice(0, 3).join(", ")}.`
+      : "Your saved skills cover the main requirements listed by the employer.";
+  const confidenceText =
+    descriptionSimilarityScore >= 70
+      ? "The job description is semantically close to your resume summary and career direction."
+      : "The role is ranked lower when the description drifts away from your resume focus.";
+
+  return `${matchedText} for ${String(job.title ?? "this role")} at ${String(job.company_name ?? "the employer")}. ${confidenceText} ${gapText}`;
+}
+
 function buildJobSearchText(job: Record<string, unknown>) {
   return [
     String(job.title ?? ""),
@@ -601,7 +836,7 @@ Deno.serve(async (req) => {
       throw new Error(error.message);
     }
 
-    const shortlist = (jobs ?? [])
+    const candidateJobs = (jobs ?? [])
       .map((job) => {
         const requiredSkills = inferJobSkills(job as Record<string, unknown>);
         const jobText = buildJobSearchText(job as Record<string, unknown>);
@@ -627,152 +862,67 @@ Deno.serve(async (req) => {
             (nonTechnicalSignal ? 30 : 0),
         };
       })
-      .filter((job) => {
-        if (technicalFocus) {
-          if (job.nonTechnicalSignal && job.baseOverlap === 0) return false;
-          if (!detectRoleDomains([
-            String(profile.jobTitle ?? ""),
-            String(profile.about ?? ""),
-            ...profileSkills,
-            ...((resumeProfile.suggested_roles ?? []) as string[]),
-            String(resumeProfile.summary ?? ""),
-          ]).some((domain) => detectRoleDomains([
-            String(job.title ?? ""),
-            String(job.description ?? ""),
-            String(job.category ?? ""),
-            ...((job.required_skills ?? []) as string[]),
-          ]).includes(domain)) && job.baseOverlap <= 1) {
-            return false;
-          }
-          if (job.baseOverlap > 0) return true;
-          return job.technicalSignal && job.roleOverlap >= 1;
-        }
+      .sort((left, right) => right.heuristicScore - left.heuristicScore);
 
-        if (profileSkills.length > 0) {
-          if (juniorProfile && isSeniorRole(String(job.title ?? ""), String(job.description ?? "")) && job.baseOverlap <= 1) {
-            return false;
-          }
-          return job.baseOverlap > 0 || job.roleOverlap >= 1;
-        }
-
-        return true;
-      })
-      .filter((job) => job.heuristicScore > 0)
-      .sort((left, right) => right.heuristicScore - left.heuristicScore)
-      .slice(0, 20);
-
-    const refinedShortlist = shortlist
-      .sort((left, right) => right.heuristicScore - left.heuristicScore)
-      .slice(0, 16);
-
-    if (refinedShortlist.length === 0) {
+    if (candidateJobs.length === 0) {
       return jsonResponse({ success: true, recommendations: [] });
     }
 
-    const prompt = `
-You are the final LLM judge for a student and fresh-graduate jobs platform.
-
-Applicant profile:
-${JSON.stringify(
-      {
-        full_name: profile.fullName,
-        job_title: profile.jobTitle,
-        location: profile.location,
-        skills: profileSkills,
-        about: profile.about,
-        resume_summary: resumeProfile.summary,
-        suggested_roles: resumeProfile.suggested_roles ?? [],
-        strengths: resumeProfile.strengths ?? [],
-        improvement_skills: resumeProfile.improvement_skills ?? [],
-      },
-      null,
-      2,
-    )}
-
-Candidate jobs:
-${JSON.stringify(refinedShortlist, null, 2)}
-
-Return valid JSON only with this exact shape:
-{
-  "recommendations": [
-    {
-      "job_id": "uuid",
-      "is_recommended": true,
-      "match_score": 0,
-      "score_breakdown": {
-        "skill_alignment": 0,
-        "role_alignment": 0,
-        "growth_alignment": 0,
-        "context_alignment": 0
-      },
-      "matched_skills": ["skill"],
-      "skill_gaps": ["gap"],
-      "reason": "one short paragraph"
-    }
-  ]
-}
-
-Rules:
-- Only include jobs that are genuinely aligned to the applicant's technical background, skills, and likely career path.
-- Exclude obviously mismatched HR, admin, clerical, recruitment, accounting, sales, and marketing roles for technical applicants unless the applicant profile explicitly points there.
-- If a role is not a fit, do not include it in recommendations at all.
-- Keep match_score between 60 and 98.
-- Do not give a role an extremely high score when direct skill evidence is thin. If only one skill clearly matches, the score should usually stay moderate rather than landing in the 90s.
-- Favor entry-level, internship, and student-appropriate roles when the profile looks junior.
-- Use only the provided candidate jobs.
-- matched_skills and skill_gaps must be concrete.
-- reason should explain why the job is a fit in plain language.
-- Judge each role with this rubric:
-  - skill_alignment: 0-45 based on direct skill overlap and adjacent technical fit
-  - role_alignment: 0-25 based on title, responsibilities, and career direction
-  - growth_alignment: 0-15 based on whether this is an achievable next step for the applicant
-  - context_alignment: 0-15 based on summary, interests, and practical context
-- match_score should reflect the total judgment, not a random estimate.
-`;
-
-    const aiResult = await callGemini(prompt);
-    const recommendationMap = new Map(
-      (aiResult.recommendations ?? [])
-        .filter((item: Record<string, unknown>) => Boolean(item.is_recommended))
-        .map((item: Record<string, unknown>) => [String(item.job_id), item]),
+    const applicantEmbeddingText = buildApplicantEmbeddingText(
+      profile as Record<string, unknown>,
+      resumeProfile as Record<string, unknown>,
+      profileSkills,
     );
+    const applicantTitleText = buildApplicantTitleText(
+      profile as Record<string, unknown>,
+      resumeProfile as Record<string, unknown>,
+    );
+    const jobEmbeddingTexts = candidateJobs.map((job) =>
+      buildJobEmbeddingText(job as Record<string, unknown>, (job.required_skills ?? []) as string[]),
+    );
+    const jobTitleTexts = candidateJobs.map((job) => trimEmbeddingText(String(job.title ?? "")));
+    let applicantEmbedding: number[] | null = null;
+    let applicantTitleEmbedding: number[] | null = null;
+    let jobEmbeddings: number[][] = [];
+    let jobTitleEmbeddings: number[][] = [];
 
-    const recommendations = refinedShortlist
-      .filter((job) => recommendationMap.has(job.id))
-      .map((job) => {
-        const item = recommendationMap.get(job.id) as Record<string, unknown>;
-        const aiMatchedSkills = dedupe((item.matched_skills as string[] | undefined) ?? []);
-        const rawMatchedSkills = dedupe(getOverlapMatches(profileSkills, aiMatchedSkills)).filter((skill) =>
-          getOverlapMatches([skill], (job.required_skills ?? []) as string[]).length > 0,
-        );
+    try {
+      const embeddings = await callGeminiEmbeddings([
+        applicantEmbeddingText,
+        applicantTitleText || applicantEmbeddingText,
+        ...jobEmbeddingTexts,
+        ...jobTitleTexts,
+      ]);
+
+      if (embeddings) {
+        applicantEmbedding = embeddings[0] ?? null;
+        applicantTitleEmbedding = embeddings[1] ?? null;
+        jobEmbeddings = embeddings.slice(2, 2 + candidateJobs.length);
+        jobTitleEmbeddings = embeddings.slice(2 + candidateJobs.length);
+      }
+    } catch (embeddingError) {
+      console.error(embeddingError);
+    }
+
+    const recommendations = candidateJobs
+      .map((job, index) => {
+        const rawMatchedSkills = dedupe(getOverlapMatches(profileSkills, (job.required_skills ?? []) as string[]));
         const matchedSkills = filterSpecificMatchedSkills(rawMatchedSkills);
-        const skillGaps = dedupe((item.skill_gaps as string[] | undefined) ?? []).filter(
+        const skillGaps = dedupe(((job.required_skills ?? []) as string[]).filter(
           (skill) => !rawMatchedSkills.some((matched) => matched.toLowerCase() === skill.toLowerCase()),
-        );
-        const contextOverlapCount = overlapCount(
-          dedupe([
-            String(profile.about ?? ""),
-            String(resumeProfile.summary ?? ""),
-            ...((resumeProfile.strengths ?? []) as string[]),
-            ...((resumeProfile.keywords ?? []) as string[]),
-          ]),
-          [String(job.title ?? ""), String(job.description ?? ""), ...((job.required_skills ?? []) as string[])],
-        );
-        const evidenceCeiling = getSkillEvidenceCeiling(
-          ((job.required_skills ?? []) as string[]).length,
-          rawMatchedSkills.length,
-          job.roleOverlap ?? 0,
-          contextOverlapCount,
-        );
-        const specificMatchedCount = countSpecificSkills(matchedSkills);
-        const seniorityPenalty = juniorProfile && isSeniorRole(String(job.title ?? ""), String(job.description ?? "")) ? 18 : 0;
-        const genericOnlyPenalty = rawMatchedSkills.length > 0 && specificMatchedCount === 0 ? 18 : 0;
-        const domainPenalty = getDomainPenalty(
+        ));
+        const domainAlignmentScore = getDomainAlignmentScore(
           profile as Record<string, unknown>,
           resumeProfile as Record<string, unknown>,
           job as Record<string, unknown>,
           rawMatchedSkills,
           (job.required_skills ?? []) as string[],
+        );
+        const specificMatchedCount = countSpecificSkills(matchedSkills);
+        const experienceAlignmentScore = getExperienceAlignmentScore(
+          profile as Record<string, unknown>,
+          resumeProfile as Record<string, unknown>,
+          job as Record<string, unknown>,
         );
         const specificRequiredSkills = ((job.required_skills ?? []) as string[]).filter((skill) => !isGenericSkill(skill));
         const genericRequiredSkills = ((job.required_skills ?? []) as string[]).filter((skill) => isGenericSkill(skill));
@@ -791,31 +941,24 @@ Rules:
               ? 0.35
               : 0;
         const skillAlignmentScore = clampScore(Math.round(specificCoverage * 85 + genericCoverage * 15), 0, 100);
-        const roleAlignmentScore = clampScore(Math.round(Math.min((job.roleOverlap ?? 0) * 26, 100)), 0, 100);
-        const domainAlignmentScore = getDomainAlignmentScore(
-          profile as Record<string, unknown>,
-          resumeProfile as Record<string, unknown>,
-          job as Record<string, unknown>,
-          rawMatchedSkills,
-          (job.required_skills ?? []) as string[],
-        );
-        const experienceAlignmentScore = getExperienceAlignmentScore(
+        const fallbackTitleMatchScore = computeJobTitleMatchScore(
           profile as Record<string, unknown>,
           resumeProfile as Record<string, unknown>,
           job as Record<string, unknown>,
         );
-        const titleMatchScore = computeJobTitleMatchScore(
-          profile as Record<string, unknown>,
-          resumeProfile as Record<string, unknown>,
-          job as Record<string, unknown>,
-        );
-        const descriptionSimilarityScore = computeDescriptionSimilarityScore(
+        const fallbackDescriptionSimilarityScore = computeDescriptionSimilarityScore(
           profile as Record<string, unknown>,
           resumeProfile as Record<string, unknown>,
           job as Record<string, unknown>,
           (job.required_skills ?? []) as string[],
           rawMatchedSkills,
         );
+        const titleMatchScore =
+          semanticSimilarityToScore(cosineSimilarity(applicantTitleEmbedding ?? [], jobTitleEmbeddings[index] ?? [])) ??
+          fallbackTitleMatchScore;
+        const descriptionSimilarityScore =
+          semanticSimilarityToScore(cosineSimilarity(applicantEmbedding ?? [], jobEmbeddings[index] ?? [])) ??
+          fallbackDescriptionSimilarityScore;
         const locationMatchScore = computeLocationMatchScore(
           profile as Record<string, unknown>,
           job as Record<string, unknown>,
@@ -831,18 +974,18 @@ Rules:
           ]),
         );
         if (profileSkills.length > 0 && specificMatchedSkills.length === 0) {
-          deterministicScore = Math.min(deterministicScore, genericMatchedSkills.length > 0 ? 52 : 38);
+          deterministicScore = Math.min(deterministicScore, genericMatchedSkills.length > 0 ? 58 : 52);
         }
         if (specificRequiredSkills.length > 0 && specificMatchedSkills.length === 0) {
-          deterministicScore = Math.min(deterministicScore, 48);
+          deterministicScore = Math.min(deterministicScore, 56);
         }
         if (domainAlignmentScore < 40) {
-          deterministicScore = Math.min(deterministicScore, specificMatchedSkills.length > 0 ? 58 : 34);
+          deterministicScore = Math.min(deterministicScore, specificMatchedSkills.length > 0 ? 58 : 42);
         }
         if (experienceAlignmentScore <= 20) {
           deterministicScore = Math.min(deterministicScore, 42);
         }
-        deterministicScore = clampScore(Math.min(deterministicScore, evidenceCeiling), 0, 100);
+        deterministicScore = clampScore(deterministicScore, 0, 100);
 
         return {
           job,
@@ -851,27 +994,21 @@ Rules:
           score_breakdown: {
             skill_alignment: Math.round(skillAlignmentScore),
             role_alignment: Math.round(titleMatchScore),
-            growth_alignment: Math.round(experienceAlignmentScore),
-            context_alignment: Math.round(descriptionSimilarityScore),
+            description_similarity: Math.round(descriptionSimilarityScore),
+            location_match: Math.round(locationMatchScore),
+            freshness: Math.round(freshnessScore),
           },
           matched_skills: matchedSkills,
           skill_gaps: skillGaps,
-          reason: String(item.reason ?? ""),
+          reason: buildRecommendationReason(job as Record<string, unknown>, matchedSkills, skillGaps, descriptionSimilarityScore),
         };
-      })
-      .filter((item) => {
-        if (profileSkills.length === 0) {
-          return item.match_score >= 60 && Boolean(item.reason);
-        }
-
-        return item.match_score >= 60 && countSpecificSkills(item.matched_skills) > 0;
       })
       .sort((left, right) => right.match_score - left.match_score);
 
     return jsonResponse({
       success: true,
       recommendations,
-      model: "gemini-2.5-flash",
+      model: applicantEmbedding ? "gemini-embedding-001" : "weighted-fallback",
     });
   } catch (error) {
     return jsonResponse(
