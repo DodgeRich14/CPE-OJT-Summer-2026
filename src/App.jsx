@@ -58,6 +58,65 @@ const adminSidebarItems = [
 ];
 
 const accentSequence = ["violet", "mint", "violet", "mint", "violet"];
+const genericSkills = new Set(["Communication", "Teamwork", "Documentation", "Excel", "Problem Solving", "Reporting"]);
+const seniorRoleKeywords = ["senior", "lead", "principal", "manager", "director", "head", "architect"];
+const roleDomainGroups = [
+  {
+    id: "software",
+    keywords: [
+      "react",
+      "javascript",
+      "typescript",
+      "node",
+      "frontend",
+      "backend",
+      "full stack",
+      "software",
+      "developer",
+      "engineer",
+      "programming",
+      "api",
+      "sql",
+      "git",
+      "testing",
+      "qa",
+    ],
+  },
+  {
+    id: "embedded",
+    keywords: [
+      "embedded",
+      "firmware",
+      "microcontroller",
+      "arduino",
+      "raspberry pi",
+      "robotics",
+      "iot",
+      "electronics",
+      "hardware",
+      "pcb",
+      "circuit",
+      "automation",
+      "control systems",
+    ],
+  },
+  {
+    id: "data",
+    keywords: ["analytics", "analysis", "data", "power bi", "excel", "reporting", "business intelligence", "sql"],
+  },
+  {
+    id: "support",
+    keywords: ["technical support", "it support", "helpdesk", "troubleshooting", "network", "customer support", "ticketing"],
+  },
+  {
+    id: "design",
+    keywords: ["graphic design", "ui", "ux", "figma", "photoshop", "illustrator", "wireframe", "branding"],
+  },
+  {
+    id: "business",
+    keywords: ["business analyst", "operations", "administration", "admin", "finance", "accounting", "sales", "marketing", "hr", "recruitment"],
+  },
+];
 
 function normalizeCategoryForState(category) {
   if (category === "Internship") return "internships";
@@ -189,30 +248,204 @@ function extractListingSkills(...values) {
   return [...new Set(normalized)];
 }
 
+function clampScore(value, min = 6, max = 98) {
+  return Math.max(Math.min(value, max), min);
+}
+
+function getOverlapMatches(sourceSkills, targetSkills) {
+  return targetSkills.filter((required) =>
+    sourceSkills.some((skill) => {
+      const currentSkill = skill.toLowerCase();
+      const neededSkill = required.toLowerCase();
+      return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
+    }),
+  );
+}
+
+function getApplicantSkills(profile) {
+  return [...new Set((Array.isArray(profile.skills) ? profile.skills : []).filter(Boolean))];
+}
+
+function sanitizeMatchedSkills(candidateSkills, applicantSkills, requiredSkills = []) {
+  const applicantMatches = getOverlapMatches(applicantSkills, candidateSkills);
+  if (requiredSkills.length === 0) {
+    return [...new Set(applicantMatches)];
+  }
+
+  return [...new Set(applicantMatches.filter((skill) => getOverlapMatches([skill], requiredSkills).length > 0))];
+}
+
+function filterSpecificMatchedSkills(skills) {
+  return [...new Set((skills ?? []).filter((skill) => !isGenericSkill(skill)))];
+}
+
+function isGenericSkill(skill) {
+  return genericSkills.has(String(skill || "").trim());
+}
+
+function countSpecificSkills(skills) {
+  return skills.filter((skill) => !isGenericSkill(skill)).length;
+}
+
+function isSeniorRole(...values) {
+  const text = values.join(" ").toLowerCase();
+  return seniorRoleKeywords.some((keyword) => text.includes(keyword));
+}
+
+function isJuniorProfile(profile) {
+  const years = Number(profile?.aiProfile?.experience_years ?? 0);
+  if (Number.isFinite(years) && years > 0) return years < 3;
+
+  const title = String(profile?.jobTitle ?? "").toLowerCase();
+  const summary = String(profile?.aiProfile?.summary ?? "").toLowerCase();
+  return (
+    !title.includes("senior") &&
+    !title.includes("lead") &&
+    (summary.includes("fresh graduate") ||
+      summary.includes("student") ||
+      summary.includes("intern") ||
+      summary.includes("entry-level") ||
+      summary.includes("early-career") ||
+      summary.includes("junior"))
+  );
+}
+
+function detectRoleDomains(values) {
+  const text = values.join(" ").toLowerCase();
+  return roleDomainGroups
+    .filter((group) => group.keywords.some((keyword) => text.includes(keyword)))
+    .map((group) => group.id);
+}
+
+function getDomainPenalty(profile, listing, matchedSkills) {
+  const applicantDomains = detectRoleDomains([
+    profile.jobTitle,
+    profile.about,
+    ...(profile.skills ?? []),
+    ...(profile.aiProfile?.suggested_roles ?? []),
+    ...(profile.aiProfile?.summary ? [profile.aiProfile.summary] : []),
+  ]);
+  const listingDomains = detectRoleDomains([
+    listing.title,
+    listing.meta,
+    listing.overview,
+    listing.setup,
+    ...listing.requiredSkills,
+    ...(listing.sourceResponsibilities ?? []),
+  ]);
+
+  if (applicantDomains.length === 0 || listingDomains.length === 0) return 0;
+  if (applicantDomains.some((domain) => listingDomains.includes(domain))) return 0;
+
+  const specificMatchedCount = countSpecificSkills(matchedSkills);
+  return specificMatchedCount === 0 ? 22 : 12;
+}
+
+function getDomainMatchBonus(profile, listing) {
+  const applicantDomains = detectRoleDomains([
+    profile.jobTitle,
+    profile.about,
+    ...(profile.skills ?? []),
+    ...(profile.aiProfile?.suggested_roles ?? []),
+    ...(profile.aiProfile?.summary ? [profile.aiProfile.summary] : []),
+  ]);
+  const listingDomains = detectRoleDomains([
+    listing.title,
+    listing.meta,
+    listing.overview,
+    listing.setup,
+    ...listing.requiredSkills,
+    ...(listing.sourceResponsibilities ?? []),
+  ]);
+
+  if (applicantDomains.length === 0 || listingDomains.length === 0) return 0;
+  return applicantDomains.some((domain) => listingDomains.includes(domain)) ? 8 : 0;
+}
+
+function getDomainAlignmentScore(profile, listing, matchedSkills) {
+  const applicantDomains = detectRoleDomains([
+    profile.jobTitle,
+    profile.about,
+    ...(profile.skills ?? []),
+    ...(profile.aiProfile?.suggested_roles ?? []),
+    ...(profile.aiProfile?.summary ? [profile.aiProfile.summary] : []),
+  ]);
+  const listingDomains = detectRoleDomains([
+    listing.title,
+    listing.meta,
+    listing.overview,
+    listing.setup,
+    ...listing.requiredSkills,
+    ...(listing.sourceResponsibilities ?? []),
+  ]);
+
+  if (applicantDomains.length === 0 || listingDomains.length === 0) return 60;
+  if (applicantDomains.some((domain) => listingDomains.includes(domain))) return 100;
+  return countSpecificSkills(matchedSkills) > 0 ? 35 : 10;
+}
+
+function getExperienceAlignmentScore(profile, listing) {
+  const juniorProfile = isJuniorProfile(profile);
+  const seniorRole = isSeniorRole(listing.title, listing.meta, listing.overview, listing.setup);
+
+  if (juniorProfile && seniorRole) return 20;
+  if (!juniorProfile && seniorRole) return 90;
+  return 82;
+}
+
+function computeWeightedAverageScore(components) {
+  const weightedTotal = components.reduce((sum, component) => sum + component.score * component.weight, 0);
+  const totalWeight = components.reduce((sum, component) => sum + component.weight, 0);
+  return totalWeight > 0 ? weightedTotal / totalWeight : 0;
+}
+
+function getScoreToneClass(score) {
+  if (score >= 80) return "score-green";
+  if (score >= 60) return "score-yellow";
+  return "score-red";
+}
+
+function getSkillEvidenceCeiling(requiredCount, matchedCount, roleOverlapCount = 0, contextOverlapCount = 0) {
+  if (matchedCount <= 0) {
+    return clampScore(42 + Math.min(roleOverlapCount * 3, 8) + Math.min(contextOverlapCount, 2) * 2);
+  }
+
+  const normalizedRequired = Math.max(requiredCount, matchedCount, 1);
+  const coverage = matchedCount / normalizedRequired;
+  const ceiling =
+    38 +
+    matchedCount * 10 +
+    coverage * 24 +
+    Math.min(roleOverlapCount * 2, 8) +
+    Math.min(contextOverlapCount, 2) * 2;
+
+  return clampScore(Math.round(ceiling));
+}
+
 function computeListingSimilarity(listing, profile, recommendation = null) {
-  const profileSkills = Array.isArray(profile.skills) ? profile.skills : [];
+  const profileSkills = getApplicantSkills(profile);
   const requiredSkills =
     Array.isArray(listing.requiredSkills) && listing.requiredSkills.length > 0
       ? listing.requiredSkills
       : extractListingSkills(listing.title, listing.meta, listing.overview, listing.setup, ...(listing.sourceResponsibilities ?? []));
-  const matchedSkills =
+  const rawMatchedSkills =
     recommendation?.matched_skills?.length
-      ? recommendation.matched_skills
-      : requiredSkills.filter((required) =>
-          profileSkills.some((skill) => {
-            const currentSkill = skill.toLowerCase();
-            const neededSkill = required.toLowerCase();
-            return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
-          }),
-        );
-
-  const matchedCount = matchedSkills.length;
-  const skillScore = requiredSkills.length > 0 ? (matchedCount / requiredSkills.length) * 78 : Math.min(matchedCount * 14, 56);
-
-  const roleTerms = normalizeSearchTerms([profile.jobTitle, ...(profile.aiProfile?.suggested_roles ?? [])]);
-  const listingTerms = new Set(normalizeSearchTerms([listing.title, listing.meta, listing.overview, listing.setup]));
+      ? sanitizeMatchedSkills(recommendation.matched_skills, profileSkills, requiredSkills)
+      : getOverlapMatches(profileSkills, requiredSkills);
+  const matchedSkills = filterSpecificMatchedSkills(rawMatchedSkills);
+  const suggestedRoles = profile.aiProfile?.suggested_roles ?? [];
+  const listingTerms = new Set(
+    normalizeSearchTerms([listing.title, listing.meta, listing.overview, listing.setup, ...(listing.sourceResponsibilities ?? []), ...requiredSkills]),
+  );
+  const roleTerms = normalizeSearchTerms([profile.jobTitle, ...suggestedRoles]);
+  const contextTerms = normalizeSearchTerms([
+    profile.about,
+    profile.aiProfile?.summary,
+    ...(profile.aiProfile?.strengths ?? []),
+    ...(profile.aiProfile?.keywords ?? []),
+  ]);
   const roleOverlapCount = roleTerms.filter((term) => listingTerms.has(term)).length;
-  const roleScore = Math.min(roleOverlapCount * 7, 14);
+  const contextOverlapCount = contextTerms.filter((term) => listingTerms.has(term)).length;
 
   const profileLocation = String(profile.location || "").trim().toLowerCase();
   const locationScore =
@@ -220,16 +453,73 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
       ? 8
       : 0;
 
-  const profileContextScore = profile.about?.trim() && matchedCount > 0 ? 4 : 0;
-  const fallbackScore = Math.round(skillScore + roleScore + locationScore + profileContextScore);
-  const blendedScore =
-    typeof recommendation?.match_score === "number"
-      ? Math.round(recommendation.match_score * 0.82 + fallbackScore * 0.18)
-      : fallbackScore;
+  const matchedCount = rawMatchedSkills.length;
+  const specificMatchedCount = countSpecificSkills(matchedSkills);
+  const specificRequiredSkills = requiredSkills.filter((skill) => !isGenericSkill(skill));
+  const genericRequiredSkills = requiredSkills.filter((skill) => isGenericSkill(skill));
+  const specificMatchedSkills = filterSpecificMatchedSkills(rawMatchedSkills);
+  const genericMatchedSkills = rawMatchedSkills.filter((skill) => isGenericSkill(skill));
+  const gapList =
+    recommendation?.skill_gaps?.length
+      ? recommendation.skill_gaps
+      : requiredSkills.filter((required) => !rawMatchedSkills.includes(required));
+  const specificCoverageRatio =
+    specificRequiredSkills.length > 0
+      ? specificMatchedSkills.length / specificRequiredSkills.length
+      : specificMatchedSkills.length > 0
+        ? 0.45
+        : 0;
+  const genericCoverageRatio =
+    genericRequiredSkills.length > 0
+      ? genericMatchedSkills.length / genericRequiredSkills.length
+      : genericMatchedSkills.length > 0
+        ? 0.35
+        : 0;
+  const skillAlignmentScore = clampScore(Math.round(specificCoverageRatio * 85 + genericCoverageRatio * 15), 0, 100);
+  const roleAlignmentScore = clampScore(
+    Math.round(
+      Math.min(roleOverlapCount * 26, 100) +
+        (suggestedRoles.length > 0 &&
+        suggestedRoles.some((role) => listing.title.toLowerCase().includes(String(role).toLowerCase().replace(/\bintern(ship)?\b/g, "").trim()))
+          ? 12
+          : 0),
+    ),
+    0,
+    100,
+  );
+  const domainAlignmentScore = getDomainAlignmentScore(profile, listing, matchedSkills);
+  const experienceAlignmentScore = getExperienceAlignmentScore(profile, listing);
+  const contextAlignmentScore = clampScore(Math.round(Math.min(contextOverlapCount * 20 + locationScore * 6, 100)), 0, 100);
+  let fallbackScore = Math.round(
+    computeWeightedAverageScore([
+      { score: skillAlignmentScore, weight: 0.5 },
+      { score: roleAlignmentScore, weight: 0.2 },
+      { score: domainAlignmentScore, weight: 0.15 },
+      { score: experienceAlignmentScore, weight: 0.1 },
+      { score: contextAlignmentScore, weight: 0.05 },
+    ]),
+  );
+  if (profileSkills.length > 0 && specificMatchedSkills.length === 0) {
+    fallbackScore = Math.min(fallbackScore, genericMatchedSkills.length > 0 ? 52 : 38);
+  }
+  if (specificRequiredSkills.length > 0 && specificMatchedSkills.length === 0) {
+    fallbackScore = Math.min(fallbackScore, 48);
+  }
+  if (domainAlignmentScore < 40) {
+    fallbackScore = Math.min(fallbackScore, specificMatchedSkills.length > 0 ? 58 : 34);
+  }
+  if (experienceAlignmentScore <= 20) {
+    fallbackScore = Math.min(fallbackScore, 42);
+  }
+  const evidenceCeiling = getSkillEvidenceCeiling(requiredSkills.length, matchedCount, roleOverlapCount, contextOverlapCount);
+  const finalScore = clampScore(Math.min(fallbackScore, evidenceCeiling));
 
   return {
     matchedSkills,
-    score: Math.max(Math.min(blendedScore, 98), 6),
+    rawMatchedSkills,
+    score: finalScore,
+    fallbackScore: clampScore(fallbackScore),
+    judgeScore: typeof recommendation?.match_score === "number" ? clampScore(recommendation.match_score, 0, 100) : null,
   };
 }
 
@@ -1374,17 +1664,17 @@ function App() {
     () => {
       const remoteListings = state.liveJobs.map((job, index) => {
         const recommendation = recommendationMap.get(String(job.id));
-        const matchedSkills = recommendation?.matched_skills ?? [];
+        const applicantSkills = getApplicantSkills(state.profile);
+        const resolvedRequiredSkills =
+          job.required_skills?.length
+            ? job.required_skills
+            : extractListingSkills(job.title, job.description, ...(job.responsibilities ?? []));
+        const matchedSkills = recommendation?.matched_skills?.length
+          ? sanitizeMatchedSkills(recommendation.matched_skills, applicantSkills, resolvedRequiredSkills)
+          : getOverlapMatches(applicantSkills, resolvedRequiredSkills);
         const skillGaps =
           recommendation?.skill_gaps ??
-          (job.required_skills ?? []).filter(
-            (required) =>
-              !state.profile.skills.some((skill) => {
-                const currentSkill = skill.toLowerCase();
-                const neededSkill = required.toLowerCase();
-                return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
-              }),
-          );
+          resolvedRequiredSkills.filter((required) => !getOverlapMatches(applicantSkills, [required]).length);
 
         return {
           id: job.id,
@@ -1409,9 +1699,7 @@ function App() {
           posted: formatRelativeDate(job.posted_at),
           applicants: recommendation ? Math.max(9, recommendation.match_score - 20) : 12 + index * 4,
           requiredSkills:
-            job.required_skills?.length
-              ? job.required_skills
-              : extractListingSkills(job.title, job.description, ...(job.responsibilities ?? [])),
+            resolvedRequiredSkills,
           scoreBase: recommendation?.match_score ?? 76,
           gaps: skillGaps,
           accent: accentSequence[index % accentSequence.length],
@@ -1426,11 +1714,12 @@ function App() {
         const recommendation = recommendationMap.get(String(listing.id));
         const similarity = computeListingSimilarity(listing, state.profile, recommendation);
         const matchedSkills = similarity.matchedSkills;
+        const rawMatchedSkills = similarity.rawMatchedSkills;
         const gaps =
           recommendation?.skill_gaps ??
           listing.requiredSkills.filter(
             (required) =>
-              !matchedSkills.some((skill) => {
+              !rawMatchedSkills.some((skill) => {
                 const currentSkill = skill.toLowerCase();
                 const neededSkill = required.toLowerCase();
                 return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
@@ -1440,9 +1729,11 @@ function App() {
         return {
           ...listing,
           score: similarity.score,
+          scoreTone: getScoreToneClass(similarity.score),
           aiReason: recommendation?.reason ?? listing.aiReason ?? "",
           matchedSkills,
           gaps,
+          rawMatchedSkills: similarity.rawMatchedSkills,
         };
       });
     },
@@ -1580,11 +1871,14 @@ function App() {
   );
   const selectedJob = listings.find((listing) => listing.id === state.selectedJobId) ?? null;
   const selectedJobRecommendation = selectedJob ? recommendationMap.get(String(selectedJob.id)) ?? null : null;
+  const selectedJobMatchedSkills = selectedJob
+    ? selectedJobRecommendation?.matched_skills?.length
+      ? sanitizeMatchedSkills(selectedJobRecommendation.matched_skills, getApplicantSkills(state.profile), selectedJob.requiredSkills)
+      : getRelevantSkills(selectedJob)
+    : [];
   const selectedJobFitReason = selectedJob
     ? (() => {
-        const matchedSkills = selectedJobRecommendation?.matched_skills?.length
-          ? selectedJobRecommendation.matched_skills
-          : getRelevantSkills(selectedJob);
+        const matchedSkills = selectedJobMatchedSkills;
         const topMatchedSkills = matchedSkills.slice(0, 3);
         const topGaps = selectedJob.gaps.slice(0, 2);
         const applicantDirection =
@@ -2468,13 +2762,7 @@ function App() {
   }
 
   function getRelevantSkills(listing) {
-    return state.profile.skills.filter((skill) =>
-      listing.requiredSkills.some((required) => {
-        const currentSkill = skill.toLowerCase();
-        const neededSkill = required.toLowerCase();
-        return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
-      }),
-    );
+    return filterSpecificMatchedSkills(sanitizeMatchedSkills(listing.requiredSkills, getApplicantSkills(state.profile), listing.requiredSkills));
   }
 
   async function submitAuth(event) {
@@ -3441,7 +3729,7 @@ function App() {
                     <span className="section-kicker">AI MATCH STUDIO</span>
                     <h3>Resume-aware job ranking</h3>
                     <p>
-                      Upload your resume once, then let Gemini and the live similarity engine rank every job in the database based on your skills, role fit, and the gaps worth improving.
+                      Upload your resume once, then let Gemini act as the judge while the live similarity engine scores every job in the database based on your skills, role fit, and the gaps worth improving.
                     </p>
                   </div>
                   <button
@@ -3524,7 +3812,7 @@ function App() {
                           <p>{listing.company}</p>
                           <span>{listing.meta}</span>
                         </div>
-                        <div className={`listing-score ${listing.accent}`}>{listing.score}</div>
+                        <div className={`listing-score ${listing.scoreTone}`}>{listing.score}</div>
                       </div>
 
                       <div className="listing-meta-row">
@@ -3638,7 +3926,7 @@ function App() {
                           <span>{card.appliedDate}</span>
                         </div>
                         <div className="application-side">
-                          <div className={`listing-score ${card.accent}`}>{card.score}</div>
+                          <div className={`listing-score ${getScoreToneClass(card.score)}`}>{card.score}</div>
                           <button
                             className="expand-button"
                             type="button"
@@ -3715,7 +4003,7 @@ function App() {
                         <span>{card.posted}</span>
                       </div>
                       <div className="application-side">
-                        <div className={`listing-score ${card.accent}`}>{card.score}</div>
+                        <div className={`listing-score ${getScoreToneClass(card.score)}`}>{card.score}</div>
                       </div>
                     </div>
                   </article>
@@ -4886,7 +5174,7 @@ function App() {
                     <span>Posted {selectedJob.posted}</span>
                     <span>{selectedJob.applicants} applicants</span>
                   </div>
-                  <div className={`listing-score ${selectedJob.accent}`}>{selectedJob.score}</div>
+                  <div className={`listing-score ${getScoreToneClass(selectedJob.score)}`}>{selectedJob.score}</div>
                 </div>
 
                 {selectedJobRecommendation?.reason && <p className="listing-ai-reason modal-ai-reason">{selectedJobRecommendation.reason}</p>}
@@ -4934,12 +5222,8 @@ function App() {
                 <div className="profile-list-block">
                   <span className="profile-label">Skills You Already Match</span>
                   <div className="progress-tags">
-                    {(selectedJobRecommendation?.matched_skills?.length
-                      ? selectedJobRecommendation.matched_skills
-                      : getRelevantSkills(selectedJob)).length > 0 ? (
-                      (selectedJobRecommendation?.matched_skills?.length
-                        ? selectedJobRecommendation.matched_skills
-                        : getRelevantSkills(selectedJob)).map((skill) => <span key={skill}>{skill}</span>)
+                    {selectedJobMatchedSkills.length > 0 ? (
+                      selectedJobMatchedSkills.map((skill) => <span key={skill}>{skill}</span>)
                     ) : (
                       <span>No direct skill matches yet</span>
                     )}

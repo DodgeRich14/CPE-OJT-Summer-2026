@@ -70,6 +70,51 @@ const skillDictionary = [
   "documentation",
   "analytics",
   "business analysis",
+  "admin",
+  "human resources",
+  "front end",
+  "full-stack",
+  "e-commerce",
+  "troubleshooting",
+  "networking",
+  "reporting",
+  "scheduling",
+  "reconciliation",
+  "financial reporting",
+  "bookkeeping",
+  "invoicing",
+  "problem solving",
+  "onboarding",
+  "employee relations",
+  "operations",
+  "operations management",
+  "people management",
+  "sla management",
+  "content strategy",
+  "research",
+  "quality assurance",
+  "bug tracking",
+  "test cases",
+  "test planning",
+  "regression testing",
+  "frontend development",
+  "full stack development",
+  "data engineering",
+  "etl",
+  "apis",
+  "hardware support",
+  "software support",
+  "process improvement",
+  "process analysis",
+  "engineering design",
+  "technical documentation",
+  "calculations",
+  "procurement",
+  "inventory management",
+  "analysis",
+  "programming",
+  "merchandising",
+  "saas",
 ];
 
 type JSearchJob = Record<string, unknown>;
@@ -88,6 +133,10 @@ function normalizeSpace(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function sha256(input: string) {
   const encoder = new TextEncoder();
   const bytes = encoder.encode(input);
@@ -98,19 +147,45 @@ async function sha256(input: string) {
 }
 
 function extractSkills(text: string) {
-  const lowered = text.toLowerCase();
-  return skillDictionary
-    .filter((skill) => lowered.includes(skill))
-    .map((skill) => {
-      if (skill === "node") return "Node.js";
-      if (skill === "next") return "Next.js";
-      if (skill === "hr") return "HR";
-      if (skill === "crm") return "CRM";
-      return skill
+  const sanitizedText = text
+    .replace(/\bPHP\s?\d[\d,]*(?:\.\d+)?(?:\s*-\s*PHP\s?\d[\d,]*(?:\.\d+)?)?/gi, " ")
+    .replace(/\b₱\s?\d[\d,]*(?:\.\d+)?/g, " ");
+  const lowered = sanitizedText.toLowerCase();
+  const skills = new Map<string, string>();
+
+  for (const skill of skillDictionary) {
+    const pattern = skill === "c#"
+      ? /\bc#\b/i
+      : new RegExp(`\\b${escapeRegex(skill).replace(/\s+/g, "\\s+")}\\b`, "i");
+    if (!pattern.test(lowered)) continue;
+
+    let label = skill;
+    if (skill === "node") label = "Node.js";
+    else if (skill === "next") label = "Next.js";
+    else if (skill === "hr" || skill === "human resources") label = "HR";
+    else if (skill === "admin") label = "Administration";
+    else if (skill === "crm") label = "CRM";
+    else if (skill === "qa") label = "QA";
+    else if (skill === "sql") label = "SQL";
+    else if (skill === "html") label = "HTML";
+    else if (skill === "css") label = "CSS";
+    else if (skill === "etl") label = "ETL";
+    else if (skill === "apis") label = "APIs";
+    else if (skill === "saas") label = "SaaS";
+    else if (skill === "front end") label = "Frontend Development";
+    else if (skill === "full-stack") label = "Full Stack Development";
+    else if (skill === "e-commerce") label = "E-Commerce";
+    else {
+      label = skill
         .split(" ")
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(" ");
-    });
+    }
+
+    skills.set(label.toLowerCase(), label);
+  }
+
+  return Array.from(skills.values());
 }
 
 function inferCategory(title: string, description: string) {

@@ -81,6 +81,187 @@ function dedupeSkills(values) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
+function clampScore(value, min = 8, max = 98) {
+  return Math.max(Math.min(value, max), min);
+}
+
+function getOverlapMatches(sourceSkills, targetSkills) {
+  return targetSkills.filter((required) =>
+    sourceSkills.some((skill) => {
+      const currentSkill = String(skill).toLowerCase();
+      const neededSkill = String(required).toLowerCase();
+      return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
+    }),
+  );
+}
+
+function getSkillEvidenceCeiling(requiredCount, matchedCount, roleOverlapCount = 0, contextOverlapCount = 0) {
+  if (matchedCount <= 0) {
+    return clampScore(42 + Math.min(roleOverlapCount * 3, 8) + Math.min(contextOverlapCount, 2) * 2);
+  }
+
+  const normalizedRequired = Math.max(requiredCount, matchedCount, 1);
+  const coverage = matchedCount / normalizedRequired;
+  const ceiling =
+    38 +
+    matchedCount * 10 +
+    coverage * 24 +
+    Math.min(roleOverlapCount * 2, 8) +
+    Math.min(contextOverlapCount, 2) * 2;
+
+  return clampScore(Math.round(ceiling));
+}
+
+const genericSkills = new Set(["Communication", "Teamwork", "Documentation", "Excel", "Problem Solving", "Reporting"]);
+const seniorRoleKeywords = ["senior", "lead", "principal", "manager", "director", "head", "architect"];
+const roleDomainGroups = [
+  {
+    id: "software",
+    keywords: ["react", "javascript", "typescript", "node", "frontend", "backend", "full stack", "software", "developer", "engineer", "programming", "api", "sql", "git", "testing", "qa"],
+  },
+  {
+    id: "embedded",
+    keywords: ["embedded", "firmware", "microcontroller", "arduino", "raspberry pi", "robotics", "iot", "electronics", "hardware", "pcb", "circuit", "automation", "control systems"],
+  },
+  {
+    id: "data",
+    keywords: ["analytics", "analysis", "data", "power bi", "excel", "reporting", "business intelligence", "sql"],
+  },
+  {
+    id: "support",
+    keywords: ["technical support", "it support", "helpdesk", "troubleshooting", "network", "customer support", "ticketing"],
+  },
+  {
+    id: "design",
+    keywords: ["graphic design", "ui", "ux", "figma", "photoshop", "illustrator", "wireframe", "branding"],
+  },
+  {
+    id: "business",
+    keywords: ["business analyst", "operations", "administration", "admin", "finance", "accounting", "sales", "marketing", "hr", "recruitment"],
+  },
+];
+
+function isGenericSkill(skill) {
+  return genericSkills.has(String(skill || "").trim());
+}
+
+function countSpecificSkills(skills) {
+  return skills.filter((skill) => !isGenericSkill(skill)).length;
+}
+
+function isSeniorRole(...values) {
+  const text = values.join(" ").toLowerCase();
+  return seniorRoleKeywords.some((keyword) => text.includes(keyword));
+}
+
+function isJuniorProfile(profile, resumeProfile) {
+  const years = Number(resumeProfile?.experience_years ?? 0);
+  if (Number.isFinite(years) && years > 0) return years < 3;
+
+  const title = String(profile?.jobTitle ?? "").toLowerCase();
+  const summary = String(resumeProfile?.summary ?? "").toLowerCase();
+  return (
+    !title.includes("senior") &&
+    !title.includes("lead") &&
+    (summary.includes("fresh graduate") ||
+      summary.includes("student") ||
+      summary.includes("intern") ||
+      summary.includes("entry-level") ||
+      summary.includes("early-career") ||
+      summary.includes("junior"))
+  );
+}
+
+function detectRoleDomains(values) {
+  const text = values.join(" ").toLowerCase();
+  return roleDomainGroups
+    .filter((group) => group.keywords.some((keyword) => text.includes(keyword)))
+    .map((group) => group.id);
+}
+
+function getDomainPenalty(profile, resumeProfile, job, matchedSkills, requiredSkills) {
+  const applicantDomains = detectRoleDomains([
+    profile?.jobTitle,
+    profile?.about,
+    ...(profile?.skills ?? []),
+    ...(resumeProfile?.suggested_roles ?? []),
+    ...(resumeProfile?.summary ? [resumeProfile.summary] : []),
+  ]);
+  const listingDomains = detectRoleDomains([
+    job?.title,
+    job?.description,
+    job?.category,
+    ...requiredSkills,
+    ...(job?.responsibilities ?? []),
+  ]);
+
+  if (applicantDomains.length === 0 || listingDomains.length === 0) return 0;
+  if (applicantDomains.some((domain) => listingDomains.includes(domain))) return 0;
+
+  const specificMatchedCount = countSpecificSkills(matchedSkills);
+  return specificMatchedCount === 0 ? 22 : 12;
+}
+
+function getDomainMatchBonus(profile, resumeProfile, job, requiredSkills) {
+  const applicantDomains = detectRoleDomains([
+    profile?.jobTitle,
+    profile?.about,
+    ...(profile?.skills ?? []),
+    ...(resumeProfile?.suggested_roles ?? []),
+    ...(resumeProfile?.summary ? [resumeProfile.summary] : []),
+  ]);
+  const listingDomains = detectRoleDomains([
+    job?.title,
+    job?.description,
+    job?.category,
+    ...requiredSkills,
+    ...(job?.responsibilities ?? []),
+  ]);
+
+  if (applicantDomains.length === 0 || listingDomains.length === 0) return 0;
+  return applicantDomains.some((domain) => listingDomains.includes(domain)) ? 8 : 0;
+}
+
+function getDomainAlignmentScore(profile, resumeProfile, job, matchedSkills, requiredSkills) {
+  const applicantDomains = detectRoleDomains([
+    profile?.jobTitle,
+    profile?.about,
+    ...(profile?.skills ?? []),
+    ...(resumeProfile?.suggested_roles ?? []),
+    ...(resumeProfile?.summary ? [resumeProfile.summary] : []),
+  ]);
+  const listingDomains = detectRoleDomains([
+    job?.title,
+    job?.description,
+    job?.category,
+    ...requiredSkills,
+    ...(job?.responsibilities ?? []),
+  ]);
+
+  if (applicantDomains.length === 0 || listingDomains.length === 0) return 60;
+  if (applicantDomains.some((domain) => listingDomains.includes(domain))) return 100;
+  return countSpecificSkills(matchedSkills) > 0 ? 35 : 10;
+}
+
+function getExperienceAlignmentScore(profile, resumeProfile, job) {
+  const juniorProfile = isJuniorProfile(profile, resumeProfile);
+  const seniorRole = isSeniorRole(job?.title, job?.description);
+
+  if (juniorProfile && seniorRole) return 20;
+  if (!juniorProfile && seniorRole) return 90;
+  return 82;
+}
+
+function computeWeightedAverageScore(components) {
+  const weightedTotal = components.reduce((sum, component) => sum + component.score * component.weight, 0);
+  const totalWeight = components.reduce((sum, component) => sum + component.weight, 0);
+  return totalWeight > 0 ? weightedTotal / totalWeight : 0;
+}
+
+function filterSpecificMatchedSkills(skills) {
+  return [...new Set((skills ?? []).filter((skill) => !isGenericSkill(skill)))];
+}
+
 const fallbackJobSkillDictionary = [
   "react",
   "typescript",
@@ -178,20 +359,16 @@ function inferJobSkills(job) {
 function computeRecommendationFallback(payload, jobs) {
   const profile = payload?.profile ?? {};
   const resumeProfile = payload?.resumeProfile ?? {};
-  const profileSkills = dedupeSkills([...(profile.skills ?? []), ...(resumeProfile.skills ?? [])]);
+  const profileSkills = dedupeSkills([...(profile.skills ?? [])]);
   const roleTerms = normalizeTerms([profile.jobTitle, ...(resumeProfile.suggested_roles ?? [])]);
   const aboutTerms = normalizeTerms([profile.about, resumeProfile.summary]);
+  const keywordTerms = normalizeTerms([...(resumeProfile.strengths ?? []), ...(resumeProfile.keywords ?? [])]);
 
   const recommendations = (jobs ?? [])
     .map((job) => {
       const requiredSkills = inferJobSkills(job);
-      const matchedSkills = requiredSkills.filter((required) =>
-        profileSkills.some((skill) => {
-          const currentSkill = skill.toLowerCase();
-          const neededSkill = required.toLowerCase();
-          return currentSkill.includes(neededSkill) || neededSkill.includes(currentSkill);
-        }),
-      );
+      const rawMatchedSkills = getOverlapMatches(profileSkills, requiredSkills);
+      const matchedSkills = filterSpecificMatchedSkills(rawMatchedSkills);
 
       const jobTerms = new Set(
         normalizeTerms([
@@ -207,13 +384,57 @@ function computeRecommendationFallback(payload, jobs) {
 
       const roleOverlap = roleTerms.filter((term) => jobTerms.has(term)).length;
       const summaryOverlap = aboutTerms.filter((term) => jobTerms.has(term)).length;
-      const skillScore = requiredSkills.length > 0 ? (matchedSkills.length / requiredSkills.length) * 82 : matchedSkills.length * 12;
-      const score = Math.round(Math.max(Math.min(skillScore + roleOverlap * 6 + Math.min(summaryOverlap, 2) * 4, 97), 8));
-      const skillGaps = requiredSkills.filter((required) => !matchedSkills.includes(required)).slice(0, 4);
+      const keywordOverlap = keywordTerms.filter((term) => jobTerms.has(term)).length;
+      const specificMatchedCount = countSpecificSkills(matchedSkills);
+      const specificRequiredSkills = requiredSkills.filter((skill) => !isGenericSkill(skill));
+      const genericRequiredSkills = requiredSkills.filter((skill) => isGenericSkill(skill));
+      const specificMatchedSkills = matchedSkills;
+      const genericMatchedSkills = rawMatchedSkills.filter((skill) => isGenericSkill(skill));
+      const specificCoverage =
+        specificRequiredSkills.length > 0
+          ? specificMatchedSkills.length / specificRequiredSkills.length
+          : specificMatchedSkills.length > 0
+            ? 0.45
+            : 0;
+      const genericCoverage =
+        genericRequiredSkills.length > 0
+          ? genericMatchedSkills.length / genericRequiredSkills.length
+          : genericMatchedSkills.length > 0
+            ? 0.35
+            : 0;
+      const skillAlignmentScore = clampScore(Math.round(specificCoverage * 85 + genericCoverage * 15), 0, 100);
+      const roleAlignmentScore = clampScore(Math.round(Math.min(roleOverlap * 26, 100)), 0, 100);
+      const domainAlignmentScore = getDomainAlignmentScore(profile, resumeProfile, job, rawMatchedSkills, requiredSkills);
+      const experienceAlignmentScore = getExperienceAlignmentScore(profile, resumeProfile, job);
+      const contextAlignmentScore = clampScore(Math.round(Math.min(summaryOverlap * 18 + keywordOverlap * 10, 100)), 0, 100);
+      const skillGaps = requiredSkills.filter((required) => !rawMatchedSkills.includes(required)).slice(0, 4);
+      let rawScore = Math.round(
+        computeWeightedAverageScore([
+          { score: skillAlignmentScore, weight: 0.5 },
+          { score: roleAlignmentScore, weight: 0.2 },
+          { score: domainAlignmentScore, weight: 0.15 },
+          { score: experienceAlignmentScore, weight: 0.1 },
+          { score: contextAlignmentScore, weight: 0.05 },
+        ]),
+      );
+      if (profileSkills.length > 0 && specificMatchedSkills.length === 0) {
+        rawScore = Math.min(rawScore, genericMatchedSkills.length > 0 ? 52 : 38);
+      }
+      if (specificRequiredSkills.length > 0 && specificMatchedSkills.length === 0) {
+        rawScore = Math.min(rawScore, 48);
+      }
+      if (domainAlignmentScore < 40) {
+        rawScore = Math.min(rawScore, specificMatchedSkills.length > 0 ? 58 : 34);
+      }
+      if (experienceAlignmentScore <= 20) {
+        rawScore = Math.min(rawScore, 42);
+      }
+      const evidenceCeiling = getSkillEvidenceCeiling(requiredSkills.length, rawMatchedSkills.length, roleOverlap, summaryOverlap + keywordOverlap);
+      const score = Math.round(clampScore(Math.min(rawScore, evidenceCeiling)));
       const reason =
         matchedSkills.length > 0
-          ? `Fallback ranking matched this role because your profile overlaps with ${matchedSkills.slice(0, 3).join(", ")}.`
-          : `Fallback ranking kept this role visible based on your current role direction and related keywords from your profile.`;
+          ? `Fallback ranking kept this role high because your profile overlaps with ${matchedSkills.slice(0, 3).join(", ")} and the role direction still lines up with your current focus.`
+          : `Fallback ranking kept this role visible because the role title and description still align with your current direction, even though the explicit skill overlap is limited.`;
 
       return {
         job,
@@ -221,8 +442,17 @@ function computeRecommendationFallback(payload, jobs) {
         match_score: score,
         matched_skills: matchedSkills,
         skill_gaps: skillGaps,
+        score_breakdown: {
+          skill_alignment: Math.round(skillAlignmentScore),
+          role_alignment: Math.round(roleAlignmentScore),
+          context_alignment: Math.round(contextAlignmentScore),
+        },
         reason,
       };
+    })
+    .filter((item) => {
+      if (profileSkills.length === 0) return item.match_score >= 45;
+      return countSpecificSkills(item.matched_skills) > 0 || item.match_score >= 65;
     })
     .sort((left, right) => right.match_score - left.match_score);
 
