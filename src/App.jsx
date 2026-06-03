@@ -605,8 +605,8 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
   const freshnessScore = computeFreshnessScore(listing.posted);
   const fallbackScore = Math.round(
     computeWeightedAverageScore([
-      { score: skillAlignmentScore, weight: 0.4 },
-      { score: titleMatchScore, weight: 0.25 },
+      { score: titleMatchScore, weight: 0.35 },
+      { score: skillAlignmentScore, weight: 0.3 },
       { score: descriptionSimilarityScore, weight: 0.2 },
       { score: locationMatchScore, weight: 0.1 },
       { score: freshnessScore, weight: 0.05 },
@@ -1805,7 +1805,7 @@ function App() {
           gaps: skillGaps,
           accent: accentSequence[index % accentSequence.length],
           initial: job.company_name.charAt(0).toUpperCase(),
-          sourceUrl: job.source_url,
+          sourceUrl: job.application_url || job.source_url,
           aiReason: recommendation?.reason ?? "",
           matchedSkills,
         };
@@ -2350,7 +2350,11 @@ function App() {
     }));
   }
 
-  function applyToJob(jobId) {
+  function applyToJob(jobOrId) {
+    const jobId = typeof jobOrId === "object" ? jobOrId.id : jobOrId;
+    const listing = typeof jobOrId === "object" ? jobOrId : listings.find((item) => item.id === jobId);
+    const externalUrl = listing?.sourceUrl;
+
     if (!state.auth.isAuthenticated) {
       openAuthModal("signup");
       return;
@@ -2371,6 +2375,10 @@ function App() {
             [jobId]: createApplicationEntry(),
           },
     }));
+
+    if (externalUrl) {
+      window.open(externalUrl, "_blank", "noopener,noreferrer");
+    }
   }
 
   function toggleSave(jobId) {
@@ -3888,7 +3896,7 @@ function App() {
                 ))}
               </div>
 
-              <p className="listing-caption">LIVE MATCHES | apply in one click or save roles for later review</p>
+              <p className="listing-caption">FEDERATED MATCHES | ranked in SkillBridge, applied on the original source site</p>
 
               <div className="listing-stack">
                 {filteredListings.map((listing) => {
@@ -3921,11 +3929,11 @@ function App() {
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            applyToJob(listing.id);
+                            applyToJob(listing);
                           }}
                         >
                           <ArrowRight size={14} />
-                          {isApplied ? "Application Sent" : "Apply Now"}
+                          {isApplied ? "Opened Source" : "Apply on Source"}
                         </button>
                         <button
                           className={`save-action${isSaved ? " saved" : ""}`}
@@ -5339,8 +5347,8 @@ function App() {
                 </div>
 
                 <div className="profile-action-row">
-                  <button className="profile-primary-button" type="button" onClick={() => applyToJob(selectedJob.id)}>
-                    Apply for This Role
+                  <button className="profile-primary-button" type="button" onClick={() => applyToJob(selectedJob)}>
+                    Apply on Source Site
                   </button>
                   <button
                     className="profile-danger-button"

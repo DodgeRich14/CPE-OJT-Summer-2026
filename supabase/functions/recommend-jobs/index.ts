@@ -966,8 +966,8 @@ Deno.serve(async (req) => {
         const freshnessScore = computeFreshnessScore(job.posted_at);
         let deterministicScore = Math.round(
           computeWeightedAverageScore([
-            { score: skillAlignmentScore, weight: 0.4 },
-            { score: titleMatchScore, weight: 0.25 },
+            { score: titleMatchScore, weight: 0.35 },
+            { score: skillAlignmentScore, weight: 0.3 },
             { score: descriptionSimilarityScore, weight: 0.2 },
             { score: locationMatchScore, weight: 0.1 },
             { score: freshnessScore, weight: 0.05 },
@@ -992,8 +992,8 @@ Deno.serve(async (req) => {
           job_id: job.id,
           match_score: deterministicScore,
           score_breakdown: {
-            skill_alignment: Math.round(skillAlignmentScore),
-            role_alignment: Math.round(titleMatchScore),
+            job_title_match: Math.round(titleMatchScore),
+            skill_match: Math.round(skillAlignmentScore),
             description_similarity: Math.round(descriptionSimilarityScore),
             location_match: Math.round(locationMatchScore),
             freshness: Math.round(freshnessScore),

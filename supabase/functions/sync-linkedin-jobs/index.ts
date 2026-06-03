@@ -209,6 +209,12 @@ function toIsoDate(value: unknown) {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
+function toNullableIsoDate(value: unknown) {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function toNumber(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
@@ -250,6 +256,36 @@ function parseJSearchJobs(payload: Record<string, unknown>) {
   return Array.isArray(firstArray) ? (firstArray as JSearchJob[]) : [];
 }
 
+function normalizeSourcePlatform(value: string) {
+  const source = normalizeSpace(value || "");
+  if (!source) return "JSearch";
+
+  const lowered = source.toLowerCase();
+  if (lowered.includes("linkedin")) return "LinkedIn";
+  if (lowered.includes("indeed")) return "Indeed";
+  if (lowered.includes("glassdoor")) return "Glassdoor";
+  if (lowered.includes("ziprecruiter")) return "ZipRecruiter";
+  if (lowered.includes("jobstreet")) return "JobStreet";
+  if (lowered.includes("kalibrr")) return "Kalibrr";
+  if (lowered.includes("google")) return "Google Jobs";
+  return source;
+}
+
+function isPlaceholderListing(title: string, description: string) {
+  const haystack = `${title} ${description}`.toLowerCase();
+  return (
+    haystack.includes("view similar jobs with this employer") ||
+    haystack.includes("view similar jobs") ||
+    haystack.includes("similar jobs with this employer")
+  );
+}
+
+function isExpiredDate(value: string | null) {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() < Date.now();
+}
+
 async function fetchJSearchJobs(apiKey: string, query: string, page: number) {
   const url = new URL("https://api.openwebninja.com/jsearch/search-v2");
   url.searchParams.set("query", query);
@@ -280,9 +316,13 @@ function mapJSearchJob(job: JSearchJob, fallbackLocation: string) {
     safeString(job.job_country),
   ].filter(Boolean);
   const location = locationParts.length > 0 ? locationParts.join(", ") : safeString(job.job_location) || fallbackLocation;
-  const applyUrl = safeString(job.job_apply_link ?? job.job_google_link ?? job.job_offer_expiration_datetime_utc);
+  const applyUrl = safeString(job.job_apply_link ?? job.job_google_link);
   const sourceUrl = safeString(job.job_google_link ?? job.job_apply_link);
   const sourceJobId = safeString(job.job_id ?? job.id) || `${title}-${companyName}-${location}`;
+  const expiresAt = toNullableIsoDate(job.job_offer_expiration_datetime_utc ?? job.job_offer_expiration_timestamp);
+  const sourcePlatform = normalizeSourcePlatform(
+    safeString(job.job_publisher ?? job.job_source ?? job.publisher ?? job.source ?? job.detected_extensions),
+  );
   const workType = inferWorkType(
     safeString(job.job_employment_type),
     description,
@@ -306,15 +346,16 @@ function mapJSearchJob(job: JSearchJob, fallbackLocation: string) {
     nice_to_have_skills: [] as string[],
     benefits: [] as string[],
     application_url: applyUrl || sourceUrl || null,
-    status: "Open",
+    status: isExpiredDate(expiresAt) ? "Closed" : "Open",
     review_status: "Approved",
-    source_platform: "JSearch",
-    source_type: "imported",
+    source_platform: sourcePlatform,
+    source_type: "federated",
     source_url: sourceUrl || applyUrl || null,
     source_job_id: sourceJobId,
     raw_payload: job,
     scraped_at: new Date().toISOString(),
     posted_at: toIsoDate(job.job_posted_at_datetime_utc ?? job.job_posted_at_timestamp ?? job.job_posted_at),
+    expires_at: expiresAt,
     salary_min: minSalary,
     salary_max: maxSalary,
     salary_currency: salaryCurrency || "PHP",
@@ -354,6 +395,7 @@ Deno.serve(async (req) => {
   const location = normalizeSpace(body.location ?? "Philippines");
   const pages = Math.min(Math.max(Number(body.pages ?? 1), 1), 3);
   const jobsPerPage = Math.min(Math.max(Number(body.jobsPerPage ?? 8), 1), 20);
+  const closeStaleAfterDays = Math.min(Math.max(Number(body.closeStaleAfterDays ?? 7), 1), 30);
   const approveImported = body.approveImported !== false;
   const query = buildSearchQuery(keyword, location);
 
@@ -382,7 +424,13 @@ Deno.serve(async (req) => {
       for (const job of jobs) {
         const mapped = mapJSearchJob(job, location);
 
-        if (!mapped.title || !mapped.company_name || !mapped.source_job_id) {
+        if (
+          !mapped.title ||
+          !mapped.company_name ||
+          !mapped.source_job_id ||
+          (!mapped.application_url && !mapped.source_url) ||
+          isPlaceholderListing(String(mapped.title), String(mapped.description))
+        ) {
           continue;
         }
 
@@ -403,14 +451,17 @@ Deno.serve(async (req) => {
     );
 
     const sourceIds = dedupedJobs.map((job) => String(job.source_job_id));
-    const { data: existingJobs } = await supabase
-      .from("jobs")
-      .select("source_job_id")
-      .eq("source_platform", "JSearch")
-      .in("source_job_id", sourceIds);
+    const { data: existingJobs } = sourceIds.length > 0
+      ? await supabase
+          .from("jobs")
+          .select("source_platform, source_job_id")
+          .in("source_job_id", sourceIds)
+      : { data: [] };
 
-    const existingSet = new Set((existingJobs ?? []).map((job) => job.source_job_id));
-    const jobsInserted = dedupedJobs.filter((job) => !existingSet.has(job.source_job_id)).length;
+    const existingSet = new Set(
+      (existingJobs ?? []).map((job) => `${job.source_platform}:${job.source_job_id}`),
+    );
+    const jobsInserted = dedupedJobs.filter((job) => !existingSet.has(`${job.source_platform}:${job.source_job_id}`)).length;
     const jobsUpdated = dedupedJobs.length - jobsInserted;
 
     const { data: upsertedJobs, error: upsertError } = await supabase
@@ -421,6 +472,32 @@ Deno.serve(async (req) => {
     if (upsertError) {
       throw upsertError;
     }
+
+    const staleCleanupThreshold = new Date(Date.now() - 1000 * 60 * 60 * 24 * closeStaleAfterDays).toISOString();
+    const activeSourceIds = dedupedJobs.map((job) => String(job.source_job_id)).filter(Boolean);
+    let staleCleanupQuery = supabase
+      .from("jobs")
+      .update({ status: "Closed", updated_at: new Date().toISOString() })
+      .eq("source_type", "federated")
+      .eq("status", "Open")
+      .lte("scraped_at", staleCleanupThreshold);
+
+    if (activeSourceIds.length > 0) {
+      staleCleanupQuery = staleCleanupQuery.not("source_job_id", "in", `(${activeSourceIds.map((id) => `"${id.replace(/"/g, '\\"')}"`).join(",")})`);
+    }
+
+    const { error: staleCleanupError } = await staleCleanupQuery;
+    if (staleCleanupError) {
+      throw staleCleanupError;
+    }
+
+    await supabase
+      .from("jobs")
+      .update({ status: "Closed", updated_at: new Date().toISOString() })
+      .eq("source_type", "federated")
+      .eq("status", "Open")
+      .not("expires_at", "is", null)
+      .lt("expires_at", new Date().toISOString());
 
     await supabase
       .from("scrape_runs")

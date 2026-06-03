@@ -532,8 +532,8 @@ function computeRecommendationFallback(payload, jobs) {
       const skillGaps = requiredSkills.filter((required) => !getOverlapMatches(rawMatchedSkills, [required]).length).slice(0, 4);
       let rawScore = Math.round(
         computeWeightedAverageScore([
-          { score: skillAlignmentScore, weight: 0.4 },
-          { score: titleMatchScore, weight: 0.25 },
+          { score: titleMatchScore, weight: 0.35 },
+          { score: skillAlignmentScore, weight: 0.3 },
           { score: descriptionSimilarityScore, weight: 0.2 },
           { score: locationMatchScore, weight: 0.1 },
           { score: freshnessScore, weight: 0.05 },
@@ -565,9 +565,11 @@ function computeRecommendationFallback(payload, jobs) {
         matched_skills: matchedSkills,
         skill_gaps: skillGaps,
         score_breakdown: {
-          skill_alignment: Math.round(skillAlignmentScore),
-          role_alignment: Math.round(titleMatchScore),
-          context_alignment: Math.round(descriptionSimilarityScore),
+          job_title_match: Math.round(titleMatchScore),
+          skill_match: Math.round(skillAlignmentScore),
+          description_similarity: Math.round(descriptionSimilarityScore),
+          location_match: Math.round(locationMatchScore),
+          freshness: Math.round(freshnessScore),
         },
         reason,
       };
