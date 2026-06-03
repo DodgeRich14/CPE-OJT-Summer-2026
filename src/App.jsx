@@ -2842,7 +2842,7 @@ function App() {
   }
 
   function getRelevantSkills(listing) {
-    return filterSpecificMatchedSkills(getApplicantMatchedSkills(getApplicantSkills(state.profile), listing.requiredSkills));
+    return getApplicantMatchedSkills(getApplicantSkills(state.profile), listing.requiredSkills);
   }
 
   async function submitAuth(event) {
