@@ -376,6 +376,93 @@ function filterSpecificMatchedSkills(skills: string[]) {
   return Array.from(new Set(skills.filter((skill) => !isGenericSkill(skill))));
 }
 
+function computeJobTitleMatchScore(profile: Record<string, unknown>, resumeProfile: Record<string, unknown>, job: Record<string, unknown>) {
+  const targetRoles = [String(profile.jobTitle ?? ""), ...((resumeProfile.suggested_roles ?? []) as string[])].filter(Boolean);
+  const roleTerms = targetRoles
+    .flatMap((value) => String(value).toLowerCase().split(/[^a-z0-9+#.]+/))
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+  const titleTerms = String(job.title ?? "")
+    .toLowerCase()
+    .split(/[^a-z0-9+#.]+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+
+  if (roleTerms.length === 0) return 50;
+
+  const overlap = roleTerms.filter((term) => titleTerms.includes(term)).length;
+  let score = overlap > 0 ? (overlap / Math.max(roleTerms.length, 1)) * 100 : 8;
+
+  if (isJuniorProfile(profile, resumeProfile) && isSeniorRole(String(job.title ?? ""))) {
+    score = Math.min(score, 22);
+  }
+
+  return clampScore(Math.round(score), 0, 100);
+}
+
+function computeDescriptionSimilarityScore(
+  profile: Record<string, unknown>,
+  resumeProfile: Record<string, unknown>,
+  job: Record<string, unknown>,
+  requiredSkills: string[],
+  matchedSkills: string[],
+) {
+  const applicantTerms = [
+    String(profile.about ?? ""),
+    String(resumeProfile.summary ?? ""),
+    ...((resumeProfile.strengths ?? []) as string[]),
+    ...((resumeProfile.keywords ?? []) as string[]),
+    ...filterSpecificMatchedSkills((profile.skills ?? []) as string[]),
+  ]
+    .flatMap((value) => String(value).toLowerCase().split(/[^a-z0-9+#.]+/))
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 3);
+  const descriptionTerms = new Set(
+    [String(job.description ?? ""), ...((job.responsibilities ?? []) as string[]), ...requiredSkills]
+      .flatMap((value) => String(value).toLowerCase().split(/[^a-z0-9+#.]+/))
+      .map((term) => term.trim())
+      .filter((term) => term.length >= 3),
+  );
+
+  if (applicantTerms.length === 0) return 45;
+
+  const overlap = applicantTerms.filter((term) => descriptionTerms.has(term)).length;
+  let score = overlap > 0 ? (overlap / Math.max(Math.min(applicantTerms.length, 12), 1)) * 100 : 10;
+
+  if (getDomainAlignmentScore(profile, resumeProfile, job, matchedSkills, requiredSkills) < 40) {
+    score = Math.min(score, countSpecificSkills(matchedSkills) > 0 ? 42 : 18);
+  }
+
+  return clampScore(Math.round(score), 0, 100);
+}
+
+function computeLocationMatchScore(profile: Record<string, unknown>, job: Record<string, unknown>) {
+  const profileLocation = String(profile.location ?? "").trim().toLowerCase();
+  const listingText = `${String(job.location ?? "")} ${String(job.work_type ?? "")}`.toLowerCase();
+
+  if (!profileLocation) return 55;
+  if (listingText.includes(profileLocation)) return 100;
+  if (listingText.includes("remote")) return 80;
+  if (listingText.includes("hybrid")) return 65;
+  return 20;
+}
+
+function computeFreshnessScore(postedAt: unknown) {
+  if (!postedAt) return 45;
+
+  const date = new Date(String(postedAt));
+  if (Number.isNaN(date.getTime())) return 45;
+
+  const diffDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)));
+  if (diffDays === 0) return 100;
+  if (diffDays === 1) return 95;
+  if (diffDays <= 3) return 90;
+  if (diffDays <= 7) return 80;
+  if (diffDays <= 14) return 68;
+  if (diffDays <= 30) return 55;
+  return 40;
+}
+
 function buildJobSearchText(job: Record<string, unknown>) {
   return [
     String(job.title ?? ""),
@@ -717,14 +804,30 @@ Rules:
           resumeProfile as Record<string, unknown>,
           job as Record<string, unknown>,
         );
-        const contextAlignmentScore = clampScore(Math.round(Math.min(contextOverlapCount * 20, 100)), 0, 100);
+        const titleMatchScore = computeJobTitleMatchScore(
+          profile as Record<string, unknown>,
+          resumeProfile as Record<string, unknown>,
+          job as Record<string, unknown>,
+        );
+        const descriptionSimilarityScore = computeDescriptionSimilarityScore(
+          profile as Record<string, unknown>,
+          resumeProfile as Record<string, unknown>,
+          job as Record<string, unknown>,
+          (job.required_skills ?? []) as string[],
+          rawMatchedSkills,
+        );
+        const locationMatchScore = computeLocationMatchScore(
+          profile as Record<string, unknown>,
+          job as Record<string, unknown>,
+        );
+        const freshnessScore = computeFreshnessScore(job.posted_at);
         let deterministicScore = Math.round(
           computeWeightedAverageScore([
-            { score: skillAlignmentScore, weight: 0.5 },
-            { score: roleAlignmentScore, weight: 0.2 },
-            { score: domainAlignmentScore, weight: 0.15 },
-            { score: experienceAlignmentScore, weight: 0.1 },
-            { score: contextAlignmentScore, weight: 0.05 },
+            { score: skillAlignmentScore, weight: 0.4 },
+            { score: titleMatchScore, weight: 0.25 },
+            { score: descriptionSimilarityScore, weight: 0.2 },
+            { score: locationMatchScore, weight: 0.1 },
+            { score: freshnessScore, weight: 0.05 },
           ]),
         );
         if (profileSkills.length > 0 && specificMatchedSkills.length === 0) {
@@ -747,9 +850,9 @@ Rules:
           match_score: deterministicScore,
           score_breakdown: {
             skill_alignment: Math.round(skillAlignmentScore),
-            role_alignment: Math.round(roleAlignmentScore),
+            role_alignment: Math.round(titleMatchScore),
             growth_alignment: Math.round(experienceAlignmentScore),
-            context_alignment: Math.round(contextAlignmentScore),
+            context_alignment: Math.round(descriptionSimilarityScore),
           },
           matched_skills: matchedSkills,
           skill_gaps: skillGaps,

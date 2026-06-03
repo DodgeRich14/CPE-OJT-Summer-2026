@@ -312,6 +312,74 @@ function computeWeightedAverageScore(components) {
   return totalWeight > 0 ? weightedTotal / totalWeight : 0;
 }
 
+function computeJobTitleMatchScore(profile, resumeProfile, job) {
+  const targetRoles = [profile?.jobTitle, ...(resumeProfile?.suggested_roles ?? [])].filter(Boolean);
+  const roleTerms = normalizeTerms(targetRoles);
+  const titleTerms = normalizeTerms([job?.title]);
+
+  if (roleTerms.length === 0) return 50;
+
+  const overlap = roleTerms.filter((term) => titleTerms.includes(term)).length;
+  let score = overlap > 0 ? (overlap / Math.max(roleTerms.length, 1)) * 100 : 8;
+
+  if (isJuniorProfile(profile, resumeProfile) && isSeniorRole(job?.title)) {
+    score = Math.min(score, 22);
+  }
+
+  return clampScore(Math.round(score), 0, 100);
+}
+
+function computeDescriptionSimilarityScore(profile, resumeProfile, job, requiredSkills, matchedSkills) {
+  const applicantTerms = normalizeTerms([
+    profile?.about,
+    resumeProfile?.summary,
+    ...(resumeProfile?.strengths ?? []),
+    ...(resumeProfile?.keywords ?? []),
+    ...filterSpecificMatchedSkills(profile?.skills ?? []),
+  ]);
+  const descriptionTerms = new Set(
+    normalizeTerms([job?.description, ...(job?.responsibilities ?? []), ...requiredSkills]),
+  );
+
+  if (applicantTerms.length === 0) return 45;
+
+  const overlap = applicantTerms.filter((term) => descriptionTerms.has(term)).length;
+  let score = overlap > 0 ? (overlap / Math.max(Math.min(applicantTerms.length, 12), 1)) * 100 : 10;
+
+  if (getDomainAlignmentScore(profile, resumeProfile, job, matchedSkills, requiredSkills) < 40) {
+    score = Math.min(score, countSpecificSkills(matchedSkills) > 0 ? 42 : 18);
+  }
+
+  return clampScore(Math.round(score), 0, 100);
+}
+
+function computeLocationMatchScore(profile, job) {
+  const profileLocation = String(profile?.location || "").trim().toLowerCase();
+  const listingText = `${job?.location || ""} ${job?.work_type || ""}`.toLowerCase();
+
+  if (!profileLocation) return 55;
+  if (listingText.includes(profileLocation)) return 100;
+  if (listingText.includes("remote")) return 80;
+  if (listingText.includes("hybrid")) return 65;
+  return 20;
+}
+
+function computeFreshnessScore(postedAt) {
+  if (!postedAt) return 45;
+
+  const date = new Date(postedAt);
+  if (Number.isNaN(date.getTime())) return 45;
+
+  const diffDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)));
+  if (diffDays === 0) return 100;
+  if (diffDays === 1) return 95;
+  if (diffDays <= 3) return 90;
+  if (diffDays <= 7) return 80;
+  if (diffDays <= 14) return 68;
+  if (diffDays <= 30) return 55;
+  return 40;
+}
+
 function filterSpecificMatchedSkills(skills) {
   return [...new Set((skills ?? []).filter((skill) => !isGenericSkill(skill)))];
 }
@@ -457,18 +525,18 @@ function computeRecommendationFallback(payload, jobs) {
             ? 0.35
             : 0;
       const skillAlignmentScore = clampScore(Math.round(specificCoverage * 85 + genericCoverage * 15), 0, 100);
-      const roleAlignmentScore = clampScore(Math.round(Math.min(roleOverlap * 26, 100)), 0, 100);
-      const domainAlignmentScore = getDomainAlignmentScore(profile, resumeProfile, job, rawMatchedSkills, requiredSkills);
-      const experienceAlignmentScore = getExperienceAlignmentScore(profile, resumeProfile, job);
-      const contextAlignmentScore = clampScore(Math.round(Math.min(summaryOverlap * 18 + keywordOverlap * 10, 100)), 0, 100);
+      const titleMatchScore = computeJobTitleMatchScore(profile, resumeProfile, job);
+      const descriptionSimilarityScore = computeDescriptionSimilarityScore(profile, resumeProfile, job, requiredSkills, rawMatchedSkills);
+      const locationMatchScore = computeLocationMatchScore(profile, job);
+      const freshnessScore = computeFreshnessScore(job.posted_at);
       const skillGaps = requiredSkills.filter((required) => !getOverlapMatches(rawMatchedSkills, [required]).length).slice(0, 4);
       let rawScore = Math.round(
         computeWeightedAverageScore([
-          { score: skillAlignmentScore, weight: 0.5 },
-          { score: roleAlignmentScore, weight: 0.2 },
-          { score: domainAlignmentScore, weight: 0.15 },
-          { score: experienceAlignmentScore, weight: 0.1 },
-          { score: contextAlignmentScore, weight: 0.05 },
+          { score: skillAlignmentScore, weight: 0.4 },
+          { score: titleMatchScore, weight: 0.25 },
+          { score: descriptionSimilarityScore, weight: 0.2 },
+          { score: locationMatchScore, weight: 0.1 },
+          { score: freshnessScore, weight: 0.05 },
         ]),
       );
       if (profileSkills.length > 0 && specificMatchedSkills.length === 0) {
@@ -477,10 +545,10 @@ function computeRecommendationFallback(payload, jobs) {
       if (specificRequiredSkills.length > 0 && specificMatchedSkills.length === 0) {
         rawScore = Math.min(rawScore, 48);
       }
-      if (domainAlignmentScore < 40) {
+      if (getDomainAlignmentScore(profile, resumeProfile, job, rawMatchedSkills, requiredSkills) < 40) {
         rawScore = Math.min(rawScore, specificMatchedSkills.length > 0 ? 58 : 34);
       }
-      if (experienceAlignmentScore <= 20) {
+      if (getExperienceAlignmentScore(profile, resumeProfile, job) <= 20) {
         rawScore = Math.min(rawScore, 42);
       }
       const evidenceCeiling = getSkillEvidenceCeiling(requiredSkills.length, rawMatchedSkills.length, roleOverlap, summaryOverlap + keywordOverlap);
@@ -498,8 +566,8 @@ function computeRecommendationFallback(payload, jobs) {
         skill_gaps: skillGaps,
         score_breakdown: {
           skill_alignment: Math.round(skillAlignmentScore),
-          role_alignment: Math.round(roleAlignmentScore),
-          context_alignment: Math.round(contextAlignmentScore),
+          role_alignment: Math.round(titleMatchScore),
+          context_alignment: Math.round(descriptionSimilarityScore),
         },
         reason,
       };
