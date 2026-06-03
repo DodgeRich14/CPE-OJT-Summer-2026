@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   Compass,
+  CreditCard,
   DollarSign,
   FileText,
   Globe,
@@ -36,6 +37,7 @@ const applicationStages = ["Applied", "Reviewed", "Shortlisted", "Interview", "O
 const sidebarItems = [
   { id: "discover", label: "Discover", icon: Compass },
   { id: "applications", label: "Applications", icon: FileText },
+  { id: "subscription", label: "Subscription", icon: CreditCard },
   { id: "progress", label: "Progress", icon: LineChart },
   { id: "roadmap", label: "Roadmap", icon: MapIcon },
   { id: "mentorship", label: "Mentorship", icon: Users },
@@ -999,9 +1001,9 @@ function App() {
   const [volunteerForm, setVolunteerForm] = useState({ org: "", role: "", status: "Active", last: "" });
   const [passwordForm, setPasswordForm] = useState({ password: "", confirmPassword: "" });
   const [passwordFeedback, setPasswordFeedback] = useState("");
-  const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
   const [isRenewalNoticeDismissed, setIsRenewalNoticeDismissed] = useState(false);
-  const hasActiveSubscription = state.subscription?.status === "active";
+  const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
+  const hasActiveSubscription = state.auth.isAuthenticated && state.subscription?.status === "active";
   const renewalDate = state.subscription?.renewalDate ? new Date(state.subscription.renewalDate) : null;
   const daysBeforeRenewal = renewalDate && !Number.isNaN(renewalDate.getTime())
     ? Math.ceil((renewalDate - new Date()) / (1000 * 60 * 60 * 24))
@@ -1014,9 +1016,26 @@ function App() {
     daysBeforeRenewal >= 0 &&
     daysBeforeRenewal <= 7;
 
+
   useEffect(() => {
     setIsRenewalNoticeDismissed(false);
   }, [state.subscription?.status, state.subscription?.renewalDate]);
+
+  function formatSubscriptionDate(dateValue) {
+    if (!dateValue) return "No renewal date yet";
+
+    const date = new Date(dateValue);
+
+    if (Number.isNaN(date.getTime())) {
+      return "No renewal date yet";
+    }
+
+    return date.toLocaleDateString("en-PH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  }
 
   useEffect(() => {
     const saved = window.localStorage.getItem(STORAGE_KEY);
@@ -2642,10 +2661,10 @@ function App() {
   async function logoutUser() {
     if (hasSupabaseConfig && supabase) {
       await supabase.auth.signOut();
-      return;
     }
 
     setAuthFeedback("");
+    setIsRenewalNoticeDismissed(false);
     setState((current) => ({
       ...current,
       authModalOpen: false,
@@ -2656,15 +2675,63 @@ function App() {
         ...current.auth,
         isAuthenticated: false,
         accountId: "",
+        accountName: "",
+        accountEmail: "",
+        accountRole: "Applicant",
+        password: "",
       },
-      profile: {
-        ...guestProfile,
-        username: current.auth.accountName ? `@${current.auth.accountName.toLowerCase().replace(/\s+/g, ".")}` : "@guest",
+      subscription: {
+        status: "free",
+        plan: "Free",
+        renewalDate: "",
       },
+      profile: guestProfile,
+      profileCertificates: [],
+      adminCertifications: [],
     }));
   }
 
-  function PremiumLockScreen({ pageName }) {
+  async function activateApplicantSubscription() {
+   if (isAdmin) return;
+
+   if (!state.auth.isAuthenticated) {
+     openAuthModal("signup");
+     return;
+   }
+
+   if (!hasSupabaseConfig || !supabase) {
+     alert("Supabase is not configured.");
+     return;
+   }
+
+   const { data, error } = await supabase.rpc("activate_my_subscription");
+
+   if (error) {
+     console.error("Subscription RPC error:", error);
+     alert(`Subscription could not be saved.\n\n${error.message}`);
+      return;
+   }
+
+    const subscription = Array.isArray(data) ? data[0] : data;
+
+    if (!subscription) {
+     alert("Subscription could not be saved. No subscription data was returned.");
+     return;
+   }
+
+   patchState({
+     subscription: {
+       status: subscription.status,
+       plan: subscription.plan,
+        renewalDate: subscription.renewal_date,
+     },
+   });
+
+    setIsRenewalNoticeDismissed(false);
+    alert("Subscription activated and saved successfully.");
+  }
+
+  function PremiumLockScreen({ pageName, onSubscribe }) {
     return (
       <section className="premium-lock-section">
         <div className="premium-lock-card">
@@ -2683,7 +2750,7 @@ function App() {
             <span>✔ Certification preparation resources</span>
             <span>✔ Progress and skill tracking</span>
           </div>
-          <button className="profile-primary-button" type="button" onClick={() => alert("Subscription checkout will be connected here.")}>
+          <button className="profile-primary-button" type="button" onClick={onSubscribe}>
             Subscribe Now
           </button>
         </div>
@@ -2716,6 +2783,21 @@ function App() {
         </div>
 
         <div className="sidebar-bottom">
+          {!isAdmin && !hasActiveSubscription && (
+            <div className="sidebar-subscription-card">
+              <span className="sidebar-subscription-kicker">Premium Access</span>
+              <h3>Unlock SkillBridge</h3>
+              <p>Unlock premium career tools.</p>
+              <button
+                className="sidebar-subscription-button"
+                type="button"
+                onClick={() => patchState({ activeSidebar: "subscription" })}
+              >
+                Subscribe Now
+              </button>
+            </div>
+          )}
+
           <button className="light-toggle" type="button" onClick={toggleTheme}>
             <MoonStar size={16} />
             <span>{state.theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
@@ -2759,18 +2841,69 @@ function App() {
               aria-label="Dismiss subscription renewal reminder"
               onClick={() => setIsRenewalNoticeDismissed(true)}
             >
-             ×
+              ×
             </button>
-
             <strong>Subscription renewal reminder</strong>
-
             <p>
-              Your {state.subscription.plan} subscription will renew{" "}
-              {daysBeforeRenewal === 0
-               ? "today"
-               : `in ${daysBeforeRenewal} day${daysBeforeRenewal > 1 ? "s" : ""}`}.
+              Your {state.subscription.plan} subscription will renew {daysBeforeRenewal === 0 ? "today" : `in ${daysBeforeRenewal} day${daysBeforeRenewal > 1 ? "s" : ""}`}.
             </p>
           </div>
+        )}
+
+        {!state.auth.isAuthenticated && state.activeSidebar === "discover" && (
+          <div className="dashboard-toolbar">
+            <button className="auth-entry-button" type="button" onClick={() => openAuthModal("signup")}>
+              Login / Sign Up
+            </button>
+          </div>
+        )}
+
+        {!isAdmin && state.activeSidebar === "subscription" && (
+          <section className="subscription-page">
+            <div className="subscription-hero-card">
+              <span className="section-kicker">SkillBridge Premium</span>
+              <h1>Upgrade your career journey</h1>
+              <p>
+                Subscribe to unlock mentorship, personalized roadmaps, progress tracking, and certification tools built for
+                applicants, interns, and fresh graduates.
+              </p>
+
+              <div className="subscription-plan-card">
+                <div>
+                  <span className="subscription-plan-label">Applicant Premium</span>
+                  <h2>₱199/month</h2>
+                  <p>Includes a 30-day subscription period for premium applicant features.</p>
+                </div>
+
+                <button
+                  className="profile-primary-button"
+                  type="button"
+                  onClick={activateApplicantSubscription}
+                >
+                  {hasActiveSubscription ? "Subscription Active" : "Continue to Subscribe"}
+                </button>
+              </div>
+
+              <div className="subscription-benefits-grid">
+                <div>
+                  <strong>Mentorship Access</strong>
+                  <p>Connect with mentors and professors for guided learning.</p>
+                </div>
+                <div>
+                  <strong>Career Roadmap</strong>
+                  <p>See what skills you need for your target job role.</p>
+                </div>
+                <div>
+                  <strong>Progress Tracking</strong>
+                  <p>Track completed skills, courses, and learning progress.</p>
+                </div>
+                <div>
+                  <strong>Certifications</strong>
+                  <p>Access certification recommendations and submission tools.</p>
+                </div>
+              </div>
+            </div>
+          </section>
         )}
 
         {isAdmin && state.activeSidebar === "analytics" && (
@@ -3599,7 +3732,7 @@ function App() {
         )}
 
         {!isAdmin && state.activeSidebar === "progress" && !hasActiveSubscription && (
-          <PremiumLockScreen pageName="Progress & Assessment" />
+          <PremiumLockScreen pageName="Progress & Assessment" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
         )}
 
         {!isAdmin && state.activeSidebar === "progress" && hasActiveSubscription && (
@@ -3704,7 +3837,7 @@ function App() {
         )}
 
         {!isAdmin && state.activeSidebar === "roadmap" && !hasActiveSubscription && (
-          <PremiumLockScreen pageName="Career Roadmap" />
+          <PremiumLockScreen pageName="Career Roadmap" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
         )}
 
         {!isAdmin && state.activeSidebar === "roadmap" && hasActiveSubscription && (
@@ -3796,7 +3929,7 @@ function App() {
         )}
 
         {!isAdmin && state.activeSidebar === "mentorship" && !hasActiveSubscription && (
-          <PremiumLockScreen pageName="Mentorship" />
+          <PremiumLockScreen pageName="Mentorship" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
         )}
 
         {!isAdmin && state.activeSidebar === "mentorship" && hasActiveSubscription && (
@@ -3886,7 +4019,7 @@ function App() {
         )}
 
         {!isAdmin && state.activeSidebar === "certifications" && !hasActiveSubscription && (
-          <PremiumLockScreen pageName="Certifications" />
+          <PremiumLockScreen pageName="Certifications" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
         )}
 
         {!isAdmin && state.activeSidebar === "certifications" && hasActiveSubscription && (
@@ -4006,6 +4139,41 @@ function App() {
                     <div className="profile-role-box">
                       <strong>{state.profile.role}</strong>
                       <span>Profile built for internships, OJT placements, volunteer roles, and fresh grad hiring.</span>
+                    </div>
+                  </div>
+
+
+                  <div className="profile-subscription-card">
+                    <div>
+                      <span className="profile-subscription-kicker">Subscription</span>
+                      <h3>
+                        {hasActiveSubscription
+                          ? state.subscription?.plan || "Applicant Premium"
+                          : "Free Applicant"}
+                      </h3>
+                      <p>
+                        {hasActiveSubscription
+                          ? `Your subscription will renew on ${formatSubscriptionDate(state.subscription?.renewalDate)}.`
+                          : "You are currently using the free applicant plan."}
+                      </p>
+                    </div>
+
+                    <div className="profile-subscription-status">
+                      <span className={`subscription-status-pill ${hasActiveSubscription ? "active" : "free"}`}>
+                        {hasActiveSubscription ? "Active" : "Free"}
+                      </span>
+
+                      {!hasActiveSubscription && (
+                        <button
+                          className="profile-subscription-button"
+                          type="button"
+                          onClick={() => {
+                            patchState({ activeSidebar: "subscription", profilePanelOpen: false });
+                          }}
+                        >
+                          Upgrade
+                        </button>
+                      )}
                     </div>
                   </div>
 
