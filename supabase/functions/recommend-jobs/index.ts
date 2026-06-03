@@ -33,15 +33,70 @@ function titleCase(value: string) {
     .join(" ");
 }
 
+const skillAliasMap = new Map([
+  ["c", "c"],
+  ["clanguage", "c"],
+  ["cprogramming", "c"],
+  ["cplusplus", "c++"],
+  ["cpp", "c++"],
+  ["c++", "c++"],
+  ["csharp", "c#"],
+  ["c#", "c#"],
+  ["css", "css"],
+  ["cascadingstylesheets", "css"],
+  ["javascript", "javascript"],
+  ["js", "javascript"],
+  ["typescript", "typescript"],
+  ["ts", "typescript"],
+  ["react", "react"],
+  ["reactjs", "react"],
+  ["node", "node.js"],
+  ["nodejs", "node.js"],
+  ["node.js", "node.js"],
+  ["next", "next.js"],
+  ["nextjs", "next.js"],
+  ["next.js", "next.js"],
+  ["postgres", "postgresql"],
+  ["postgresql", "postgresql"],
+  ["mysql", "mysql"],
+  ["sql", "sql"],
+  ["hr", "hr"],
+  ["humanresources", "hr"],
+  ["crm", "crm"],
+]);
+
+function normalizeSkillForMatch(value: string) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  const compact = normalized.replace(/[^a-z0-9+#]/g, "");
+
+  return skillAliasMap.get(compact) ?? skillAliasMap.get(normalized) ?? normalized;
+}
+
+function skillsMatch(sourceSkill: string, targetSkill: string) {
+  const source = normalizeSkillForMatch(sourceSkill);
+  const target = normalizeSkillForMatch(targetSkill);
+
+  if (!source || !target) return false;
+  if (source === target) return true;
+
+  const sourceTokens = source.split(/[^a-z0-9+#]+/).filter((token) => token.length > 1);
+  const targetTokens = target.split(/[^a-z0-9+#]+/).filter((token) => token.length > 1);
+
+  if (sourceTokens.length === 0 || targetTokens.length === 0) return false;
+  if (sourceTokens.length === 1 && targetTokens.length === 1) return false;
+
+  return sourceTokens.every((token) => targetTokens.includes(token)) || targetTokens.every((token) => sourceTokens.includes(token));
+}
+
 function overlapCount(a: string[], b: string[]) {
-  const left = a.map((item) => item.toLowerCase());
-  const right = b.map((item) => item.toLowerCase());
-  return right.filter((skill) => left.some((current) => current.includes(skill) || skill.includes(current))).length;
+  return getOverlapMatches(a, b).length;
 }
 
 function getOverlapMatches(sourceSkills: string[], targetSkills: string[]) {
-  const left = sourceSkills.map((item) => item.toLowerCase());
-  return targetSkills.filter((skill) => left.some((current) => current.includes(skill.toLowerCase()) || skill.toLowerCase().includes(current)));
+  return targetSkills.filter((skill) => sourceSkills.some((current) => skillsMatch(current, skill)));
 }
 
 function clampScore(value: number, min = 0, max = 100) {
