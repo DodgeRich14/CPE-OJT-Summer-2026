@@ -6,6 +6,21 @@ function ensureSupabase() {
   }
 }
 
+async function loadOpenJobs(selectClause) {
+  const { data, error } = await supabase
+    .from("jobs")
+    .select(selectClause)
+    .eq("status", "Open")
+    .eq("review_status", "Approved")
+    .order("posted_at", { ascending: false });
+
+  if (error) {
+    throw new Error(error.message || "Failed to load jobs.");
+  }
+
+  return data ?? [];
+}
+
 function titleCase(value) {
   return value
     .split(" ")
@@ -613,32 +628,16 @@ export async function fetchRecommendedJobs(payload) {
   });
 
   if (error) {
-    const { data: jobs, error: jobsError } = await supabase
-      .from("jobs")
-      .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
-      .eq("status", "Open")
-      .eq("review_status", "Approved")
-      .order("posted_at", { ascending: false });
-
-    if (jobsError) {
-      throw new Error(error.message || jobsError.message || "Job recommendation failed.");
-    }
-
+    const jobs = await loadOpenJobs(
+      "id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url",
+    );
     return computeRecommendationFallback(payload, jobs ?? []);
   }
 
   if (data?.error) {
-    const { data: jobs, error: jobsError } = await supabase
-      .from("jobs")
-      .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
-      .eq("status", "Open")
-      .eq("review_status", "Approved")
-      .order("posted_at", { ascending: false });
-
-    if (jobsError) {
-      throw new Error(data.error);
-    }
-
+    const jobs = await loadOpenJobs(
+      "id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url",
+    );
     return computeRecommendationFallback(payload, jobs ?? []);
   }
 
@@ -648,16 +647,5 @@ export async function fetchRecommendedJobs(payload) {
 export async function fetchLiveJobs() {
   ensureSupabase();
 
-  const { data, error } = await supabase
-    .from("jobs")
-    .select("*")
-    .eq("status", "Open")
-    .eq("review_status", "Approved")
-    .order("posted_at", { ascending: false });
-
-  if (error) {
-    throw new Error(error.message || "Failed to load jobs.");
-  }
-
-  return data ?? [];
+  return loadOpenJobs("*");
 }

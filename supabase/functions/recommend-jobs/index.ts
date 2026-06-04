@@ -698,6 +698,29 @@ function buildRecommendationReason(
   return `${matchedText} for ${String(job.title ?? "this role")} at ${String(job.company_name ?? "the employer")}. ${confidenceText} ${gapText}`;
 }
 
+async function loadOpenJobs(
+  supabase: ReturnType<typeof createClient>,
+  category: string | null,
+) {
+  let query = supabase
+    .from("jobs")
+    .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
+    .eq("status", "Open")
+    .eq("review_status", "Approved")
+    .order("posted_at", { ascending: false });
+
+  if (category) {
+    query = query.eq("category", category);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data ?? [];
+}
+
 function buildJobSearchText(job: Record<string, unknown>) {
   return [
     String(job.title ?? ""),
@@ -819,22 +842,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    let query = supabase
-      .from("jobs")
-      .select("id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url")
-      .eq("status", "Open")
-      .eq("review_status", "Approved")
-      .order("posted_at", { ascending: false });
-
-    if (category) {
-      query = query.eq("category", category);
-    }
-
-    const { data: jobs, error } = await query;
-
-    if (error) {
-      throw new Error(error.message);
-    }
+    const jobs = await loadOpenJobs(supabase, category);
 
     const candidateJobs = (jobs ?? [])
       .map((job) => {
