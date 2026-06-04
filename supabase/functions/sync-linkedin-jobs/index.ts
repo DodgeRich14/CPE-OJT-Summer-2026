@@ -448,6 +448,17 @@ function normalizeSourcePlatform(value: string) {
   return source;
 }
 
+function getRunSourceLabel(provider: string, sourceFilter: string) {
+  if (provider === "aggregate") return "Aggregated APIs";
+  if (provider === "searchapi") return "SearchAPI";
+  if (provider === "serpapi") return "SerpApi";
+  if (provider === "linkedin") return "LinkedIn via ScraperAPI";
+  if (provider === "jobstreet") return "JobStreet via ScraperAPI";
+  if (provider === "kalibrr") return "Kalibrr via ScraperAPI";
+  if (sourceFilter === "Any") return "JSearch";
+  return `${sourceFilter} via JSearch`;
+}
+
 function isPlaceholderListing(title: string, description: string) {
   const haystack = `${title} ${description}`.toLowerCase();
   return (
@@ -481,6 +492,196 @@ async function fetchJSearchJobs(apiKey: string, query: string, page: number) {
   }
 
   return response.json() as Promise<Record<string, unknown>>;
+}
+
+async function fetchSearchApiJobs(
+  apiKey: string,
+  keyword: string,
+  location: string,
+  page: number,
+  jobsPerPage: number,
+) {
+  const url = new URL("https://www.searchapi.io/api/v1/search");
+  url.searchParams.set("engine", "google_jobs");
+  url.searchParams.set("q", keyword);
+  url.searchParams.set("location", location);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("hl", "en");
+  url.searchParams.set("gl", inferCountryCode(location));
+  url.searchParams.set("start", String(Math.max(0, (page - 1) * 10)));
+
+  const response = await fetch(url.toString(), { method: "GET" });
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`SearchAPI returned ${response.status}: ${errorText}`);
+  }
+
+  const payload = await response.json() as Record<string, unknown>;
+  const jobs = Array.isArray(payload.jobs) ? (payload.jobs as Record<string, unknown>[]) : [];
+  return jobs.slice(0, jobsPerPage);
+}
+
+function mapSearchApiJob(job: Record<string, unknown>, fallbackLocation: string) {
+  const title = safeString(job.title);
+  const companyName = safeString(job.company_name ?? job.company);
+  const description = safeString(job.description ?? "");
+  const location = safeString(job.location) || fallbackLocation;
+  const via = safeString(job.via).replace(/^via\s+/i, "");
+  const applyLinks = Array.isArray(job.apply_links) ? (job.apply_links as Record<string, unknown>[]) : [];
+  const applyOptions = Array.isArray(job.apply_options) ? (job.apply_options as Record<string, unknown>[]) : [];
+  const primaryApplyEntry = applyLinks[0] ?? applyOptions[0] ?? {};
+  const applyUrl = safeString(
+    job.apply_link ??
+      job.job_link ??
+      primaryApplyEntry.link ??
+      primaryApplyEntry.apply_link ??
+      primaryApplyEntry.url ??
+      "",
+  );
+  const sourceUrl = safeString(job.sharing_link ?? job.share_link ?? applyUrl);
+  const sourceName = safeString(primaryApplyEntry.source ?? primaryApplyEntry.platform ?? "");
+  const sourceJobId = safeString(job.job_id ?? job.id ?? sourceUrl ?? applyUrl) || `${title}-${companyName}-${location}`;
+  const sourcePlatform = normalizeSourcePlatform(via || sourceName || "Google Jobs");
+  const workType = inferWorkType(
+    safeString(job.schedule_type ?? ""),
+    safeString((job.detected_extensions as Record<string, unknown> | undefined)?.schedule_type ?? ""),
+    description,
+  );
+  const requiredSkills = extractSkills(`${title} ${description}`);
+
+  return {
+    title,
+    company_name: companyName,
+    category: inferCategory(title, description),
+    location,
+    work_type: workType,
+    description: description || `${title} role imported from SearchAPI.`,
+    responsibilities: [] as string[],
+    required_skills: requiredSkills,
+    nice_to_have_skills: [] as string[],
+    benefits: [] as string[],
+    application_url: applyUrl || null,
+    status: "Open",
+    review_status: "Approved",
+    source_platform: sourcePlatform,
+    source_type: "federated",
+    source_url: sourceUrl || applyUrl || null,
+    source_job_id: sourceJobId,
+    raw_payload: job,
+    scraped_at: new Date().toISOString(),
+    posted_at: toIsoDate((job.detected_extensions as Record<string, unknown> | undefined)?.posted_at ?? null),
+    expires_at: null,
+    salary_min: null,
+    salary_max: null,
+    salary_currency: "PHP",
+    salary_interval: "monthly",
+  };
+}
+
+async function fetchSerpApiJobs(
+  apiKey: string,
+  keyword: string,
+  location: string,
+  page: number,
+  jobsPerPage: number,
+) {
+  let payload: Record<string, unknown> | null = null;
+  let nextPageToken = "";
+
+  for (let currentPage = 1; currentPage <= Math.max(page, 1); currentPage += 1) {
+    const url = new URL("https://serpapi.com/search.json");
+    url.searchParams.set("engine", "google_jobs");
+    url.searchParams.set("q", keyword);
+    url.searchParams.set("location", location);
+    url.searchParams.set("hl", "en");
+    url.searchParams.set("gl", inferCountryCode(location));
+    url.searchParams.set("api_key", apiKey);
+
+    if (nextPageToken) {
+      url.searchParams.set("next_page_token", nextPageToken);
+    }
+
+    const response = await fetch(url.toString(), { method: "GET" });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`SerpApi returned ${response.status}: ${errorText}`);
+    }
+
+    payload = await response.json() as Record<string, unknown>;
+
+    if (currentPage < page) {
+      nextPageToken = safeString(
+        (payload.serpapi_pagination as Record<string, unknown> | undefined)?.next_page_token,
+      );
+
+      if (!nextPageToken) {
+        return [];
+      }
+    }
+  }
+
+  const collections = [
+    (payload?.jobs_results as Record<string, unknown> | undefined)?.jobs,
+    payload?.jobs_results,
+    payload?.jobs,
+  ];
+  const firstArray = collections.find((value) => Array.isArray(value));
+  const jobs = Array.isArray(firstArray) ? (firstArray as Record<string, unknown>[]) : [];
+  return jobs.slice(0, jobsPerPage);
+}
+
+function mapSerpApiJob(job: Record<string, unknown>, fallbackLocation: string) {
+  const title = safeString(job.title ?? job.job_title);
+  const companyName = safeString(job.company_name ?? job.company);
+  const description = safeString(job.description ?? "");
+  const location = safeString(job.location ?? job.locations) || fallbackLocation;
+  const via = safeString(job.via).replace(/^via\s+/i, "");
+  const applyOptions = Array.isArray(job.apply_options) ? (job.apply_options as Record<string, unknown>[]) : [];
+  const primaryApplyEntry = applyOptions[0] ?? {};
+  const applicationUrl = safeString(
+    job.source_link ??
+      primaryApplyEntry.link ??
+      job.link ??
+      "",
+  );
+  const sourceUrl = safeString(job.share_link ?? job.link ?? applicationUrl);
+  const sourcePlatform = normalizeSourcePlatform(
+    via || safeString(primaryApplyEntry.title ?? primaryApplyEntry.source ?? "") || "SerpApi",
+  );
+  const sourceJobId = safeString(job.job_id ?? job.id ?? sourceUrl ?? applicationUrl) || `${title}-${companyName}-${location}`;
+  const detectedExtensions = (job.detected_extensions as Record<string, unknown> | undefined) ?? {};
+
+  return {
+    title,
+    company_name: companyName,
+    category: inferCategory(title, description),
+    location,
+    work_type: inferWorkType(
+      safeString(detectedExtensions.schedule_type ?? detectedExtensions.schedule ?? ""),
+      description,
+    ),
+    description: description || `${title} role imported from SerpApi.`,
+    responsibilities: [] as string[],
+    required_skills: extractSkills(`${title} ${description}`),
+    nice_to_have_skills: [] as string[],
+    benefits: [] as string[],
+    application_url: applicationUrl || sourceUrl || null,
+    status: "Open",
+    review_status: "Approved",
+    source_platform: sourcePlatform,
+    source_type: "federated",
+    source_url: sourceUrl || applicationUrl || null,
+    source_job_id: sourceJobId,
+    raw_payload: job,
+    scraped_at: new Date().toISOString(),
+    posted_at: toIsoDate(detectedExtensions.posted_at ?? job.posted_at ?? null),
+    expires_at: null,
+    salary_min: null,
+    salary_max: null,
+    salary_currency: "PHP",
+    salary_interval: "monthly",
+  };
 }
 
 async function fetchViaScraperApi(apiKey: string, targetUrl: string, countryCode: string) {
@@ -845,6 +1046,8 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const jsearchApiKey = Deno.env.get("JSEARCH_API_KEY");
+  const searchApiKey = Deno.env.get("SEARCHAPI_API_KEY");
+  const serpApiKey = Deno.env.get("SERPAPI_API_KEY");
   const scraperApiKey = Deno.env.get("SCRAPERAPI_KEY");
   const jobSyncSecret = Deno.env.get("JOB_SYNC_SECRET");
 
@@ -865,7 +1068,10 @@ Deno.serve(async (req) => {
   const jobsPerPage = Math.min(Math.max(Number(body.jobsPerPage ?? 12), 1), 20);
   const closeStaleAfterDays = Math.min(Math.max(Number(body.closeStaleAfterDays ?? 7), 1), 30);
   const approveImported = body.approveImported !== false;
-  const provider = normalizeSpace(body.provider ?? "linkedin").toLowerCase();
+  const provider = normalizeSpace(body.provider ?? "aggregate").toLowerCase();
+  const debug = body.debug === true;
+  const userIp = String(req.headers.get("x-forwarded-for") ?? "127.0.0.1").split(",")[0].trim() || "127.0.0.1";
+  const userAgent = req.headers.get("user-agent") ?? "SkillBridge/1.0";
   const defaultSourceFilter =
     provider === "linkedin"
       ? "LinkedIn"
@@ -873,6 +1079,8 @@ Deno.serve(async (req) => {
         ? "JobStreet"
         : provider === "kalibrr"
           ? "Kalibrr"
+          : provider === "jsearch" || provider === "searchapi" || provider === "serpapi" || provider === "aggregate"
+            ? "Any"
           : "LinkedIn";
   const sourceFilter = normalizeSpace(body.sourceFilter ?? defaultSourceFilter) || defaultSourceFilter;
 
@@ -884,19 +1092,18 @@ Deno.serve(async (req) => {
     return jsonResponse({ error: "JSEARCH_API_KEY is missing for JSearch imports." }, 500);
   }
 
+  if (provider === "searchapi" && !searchApiKey) {
+    return jsonResponse({ error: "SEARCHAPI_API_KEY is missing for SearchAPI imports." }, 500);
+  }
+
+  if (provider === "serpapi" && !serpApiKey) {
+    return jsonResponse({ error: "SERPAPI_API_KEY is missing for SerpApi imports." }, 500);
+  }
+
   const { data: runRow, error: runInsertError } = await supabase
     .from("scrape_runs")
     .insert({
-      source_platform:
-        provider === "linkedin"
-          ? "LinkedIn via ScraperAPI"
-          : provider === "jobstreet"
-            ? "JobStreet via ScraperAPI"
-            : provider === "kalibrr"
-              ? "Kalibrr via ScraperAPI"
-          : sourceFilter === "Any"
-            ? "JSearch"
-            : `${sourceFilter} via JSearch`,
+      source_platform: getRunSourceLabel(provider, sourceFilter),
       keywords,
       location,
       status: "Running",
@@ -910,22 +1117,101 @@ Deno.serve(async (req) => {
 
   try {
     const importedJobs: Array<Record<string, unknown>> = [];
+    const providerWarnings: string[] = [];
+    const providerBatchCounts: Array<Record<string, unknown>> = [];
 
     for (const keyword of keywords) {
       for (let page = 1; page <= pages; page += 1) {
-        const jobs =
-          provider === "linkedin"
-            ? await fetchLinkedInJobs(scraperApiKey as string, keyword, location, page, jobsPerPage)
-            : provider === "jobstreet"
-              ? await fetchJobStreetJobs(scraperApiKey as string, keyword, location, page, jobsPerPage)
-              : provider === "kalibrr"
-                ? await fetchKalibrrJobs(scraperApiKey as string, keyword, location, page, jobsPerPage)
-            : parseJSearchJobs(await fetchJSearchJobs(jsearchApiKey as string, buildSearchQuery(keyword, location), page)).slice(0, jobsPerPage).map((job) =>
-                mapJSearchJob(job, location)
-              );
+        const jobBatches: Array<Record<string, unknown>[]> = [];
 
-        for (const job of jobs) {
-          const mapped = provider === "linkedin" ? (job as Record<string, unknown>) : (job as Record<string, unknown>);
+        if (provider === "aggregate" || provider === "jsearch") {
+          if (jsearchApiKey) {
+            try {
+              const parsedJSearchJobs = parseJSearchJobs(
+                await fetchJSearchJobs(jsearchApiKey as string, buildSearchQuery(keyword, location), page),
+              ).slice(0, jobsPerPage);
+              jobBatches.push(parsedJSearchJobs.map((job) => mapJSearchJob(job, location)));
+              if (debug) {
+                providerBatchCounts.push({ provider: "jsearch", keyword, page, fetched: parsedJSearchJobs.length });
+              }
+            } catch (error) {
+              providerWarnings.push(`JSearch: ${formatErrorMessage(error)}`);
+            }
+          } else if (provider === "aggregate") {
+            providerWarnings.push("JSearch: missing JSEARCH_API_KEY");
+          }
+        }
+
+        if (provider === "aggregate" || provider === "searchapi") {
+          if (searchApiKey) {
+            try {
+              const fetchedSearchApiJobs = await fetchSearchApiJobs(
+                searchApiKey as string,
+                keyword,
+                location,
+                page,
+                jobsPerPage,
+              );
+              jobBatches.push(fetchedSearchApiJobs.map((job) => mapSearchApiJob(job, location)));
+              if (debug) {
+                providerBatchCounts.push({ provider: "searchapi", keyword, page, fetched: fetchedSearchApiJobs.length });
+              }
+            } catch (error) {
+              providerWarnings.push(`SearchAPI: ${formatErrorMessage(error)}`);
+            }
+          } else if (provider === "aggregate") {
+            providerWarnings.push("SearchAPI: missing SEARCHAPI_API_KEY");
+          }
+        }
+
+        if (provider === "aggregate" || provider === "serpapi") {
+          if (serpApiKey) {
+            try {
+              const serpApiJobs = await fetchSerpApiJobs(
+                serpApiKey as string,
+                keyword,
+                location,
+                page,
+                jobsPerPage,
+              );
+              jobBatches.push(serpApiJobs.map((job) => mapSerpApiJob(job, location)));
+              if (debug) {
+                providerBatchCounts.push({ provider: "serpapi", keyword, page, fetched: serpApiJobs.length });
+              }
+            } catch (error) {
+              providerWarnings.push(`SerpApi: ${formatErrorMessage(error)}`);
+            }
+          } else if (provider === "aggregate") {
+            providerWarnings.push("SerpApi: missing SERPAPI_API_KEY");
+          }
+        }
+
+        if (provider === "linkedin") {
+          const linkedInJobs = await fetchLinkedInJobs(scraperApiKey as string, keyword, location, page, jobsPerPage);
+          jobBatches.push(linkedInJobs);
+          if (debug) {
+            providerBatchCounts.push({ provider: "linkedin", keyword, page, fetched: linkedInJobs.length });
+          }
+        }
+
+        if (provider === "jobstreet") {
+          const jobStreetJobs = await fetchJobStreetJobs(scraperApiKey as string, keyword, location, page, jobsPerPage);
+          jobBatches.push(jobStreetJobs);
+          if (debug) {
+            providerBatchCounts.push({ provider: "jobstreet", keyword, page, fetched: jobStreetJobs.length });
+          }
+        }
+
+        if (provider === "kalibrr") {
+          const kalibrrJobs = await fetchKalibrrJobs(scraperApiKey as string, keyword, location, page, jobsPerPage);
+          jobBatches.push(kalibrrJobs);
+          if (debug) {
+            providerBatchCounts.push({ provider: "kalibrr", keyword, page, fetched: kalibrrJobs.length });
+          }
+        }
+
+        for (const job of jobBatches.flat()) {
+          const mapped = job as Record<string, unknown>;
 
           if (
             !mapped.title ||
@@ -952,52 +1238,72 @@ Deno.serve(async (req) => {
     }
 
     const dedupedJobs = Array.from(
-      new Map(importedJobs.map((job) => [`${job.source_platform}:${job.source_job_id}`, job])).values(),
+      new Map(
+        importedJobs.map((job) => [
+          String(job.normalized_hash || `${job.source_platform}:${job.source_job_id}`),
+          job,
+        ]),
+      ).values(),
     );
 
-    const sourceIds = dedupedJobs.map((job) => String(job.source_job_id));
-    const { data: existingJobs } = sourceIds.length > 0
+    const sourceIds = dedupedJobs.map((job) => String(job.source_job_id)).filter(Boolean);
+    const normalizedHashes = dedupedJobs.map((job) => String(job.normalized_hash ?? "")).filter(Boolean);
+    const { data: existingJobs } = normalizedHashes.length > 0
       ? await supabase
           .from("jobs")
-          .select("source_platform, source_job_id")
-          .in("source_job_id", sourceIds)
+          .select("source_platform, source_job_id, normalized_hash")
+          .in("normalized_hash", normalizedHashes)
       : { data: [] };
 
-    const existingSet = new Set(
-      (existingJobs ?? []).map((job) => `${job.source_platform}:${job.source_job_id}`),
+    const existingHashSet = new Set(
+      (existingJobs ?? []).map((job) => String(job.normalized_hash ?? "")).filter(Boolean),
     );
-    const jobsInserted = dedupedJobs.filter((job) => !existingSet.has(`${job.source_platform}:${job.source_job_id}`)).length;
-    const jobsUpdated = dedupedJobs.length - jobsInserted;
+    const existingSourceSet = new Set(
+      (existingJobs ?? [])
+        .map((job) => (job.source_platform && job.source_job_id ? `${job.source_platform}:${job.source_job_id}` : ""))
+        .filter(Boolean),
+    );
+    const jobsToUpsert = dedupedJobs.filter((job) => {
+      const sourceKey = `${job.source_platform}:${job.source_job_id}`;
+      const hashKey = String(job.normalized_hash ?? "");
+      return !existingHashSet.has(hashKey) || existingSourceSet.has(sourceKey);
+    });
+    const jobsInserted = jobsToUpsert.filter((job) => !existingSourceSet.has(`${job.source_platform}:${job.source_job_id}`)).length;
+    const jobsUpdated = jobsToUpsert.length - jobsInserted;
 
-    const { data: upsertedJobs, error: upsertError } = await supabase
-      .from("jobs")
-      .upsert(dedupedJobs, { onConflict: "source_platform,source_job_id" })
-      .select("id, title, company_name, source_job_id");
+    const { data: upsertedJobs, error: upsertError } = jobsToUpsert.length > 0
+      ? await supabase
+          .from("jobs")
+          .upsert(jobsToUpsert, { onConflict: "source_platform,source_job_id" })
+          .select("id, title, company_name, source_job_id")
+      : { data: [], error: null };
 
     if (upsertError) {
       throw upsertError;
     }
 
-    const staleCleanupThreshold = new Date(Date.now() - 1000 * 60 * 60 * 24 * closeStaleAfterDays).toISOString();
-    const activeSourceIds = dedupedJobs.map((job) => String(job.source_job_id)).filter(Boolean);
-    let staleCleanupQuery = supabase
-      .from("jobs")
-      .update({ status: "Closed", updated_at: new Date().toISOString() })
-      .eq("source_type", "federated")
-      .eq("status", "Open")
-      .lte("scraped_at", staleCleanupThreshold);
+    if (!["aggregate", "searchapi", "serpapi"].includes(provider)) {
+      const staleCleanupThreshold = new Date(Date.now() - 1000 * 60 * 60 * 24 * closeStaleAfterDays).toISOString();
+      const activeSourceIds = dedupedJobs.map((job) => String(job.source_job_id)).filter(Boolean);
+      let staleCleanupQuery = supabase
+        .from("jobs")
+        .update({ status: "Closed", updated_at: new Date().toISOString() })
+        .eq("source_type", "federated")
+        .eq("status", "Open")
+        .lte("scraped_at", staleCleanupThreshold);
 
-    if (sourceFilter !== "Any") {
-      staleCleanupQuery = staleCleanupQuery.eq("source_platform", sourceFilter);
-    }
+      if (sourceFilter !== "Any") {
+        staleCleanupQuery = staleCleanupQuery.eq("source_platform", sourceFilter);
+      }
 
-    if (activeSourceIds.length > 0) {
-      staleCleanupQuery = staleCleanupQuery.not("source_job_id", "in", `(${activeSourceIds.map((id) => `"${id.replace(/"/g, '\\"')}"`).join(",")})`);
-    }
+      if (activeSourceIds.length > 0) {
+        staleCleanupQuery = staleCleanupQuery.not("source_job_id", "in", `(${activeSourceIds.map((id) => `"${id.replace(/"/g, '\\"')}"`).join(",")})`);
+      }
 
-    const { error: staleCleanupError } = await staleCleanupQuery;
-    if (staleCleanupError) {
-      throw staleCleanupError;
+      const { error: staleCleanupError } = await staleCleanupQuery;
+      if (staleCleanupError) {
+        throw staleCleanupError;
+      }
     }
 
     await supabase
@@ -1011,18 +1317,9 @@ Deno.serve(async (req) => {
     await supabase
       .from("scrape_runs")
       .update({
-        source_platform:
-          provider === "linkedin"
-            ? "LinkedIn via ScraperAPI"
-            : provider === "jobstreet"
-              ? "JobStreet via ScraperAPI"
-              : provider === "kalibrr"
-                ? "Kalibrr via ScraperAPI"
-          : sourceFilter === "Any"
-            ? "JSearch"
-            : `${sourceFilter} via JSearch`,
+        source_platform: getRunSourceLabel(provider, sourceFilter),
         status: "Completed",
-        jobs_found: dedupedJobs.length,
+        jobs_found: jobsToUpsert.length,
         jobs_inserted: jobsInserted,
         jobs_updated: jobsUpdated,
         completed_at: new Date().toISOString(),
@@ -1031,38 +1328,29 @@ Deno.serve(async (req) => {
 
     return jsonResponse({
       success: true,
-      source:
-        provider === "linkedin"
-          ? "LinkedIn via ScraperAPI"
-          : provider === "jobstreet"
-            ? "JobStreet via ScraperAPI"
-            : provider === "kalibrr"
-              ? "Kalibrr via ScraperAPI"
-          : sourceFilter === "Any"
-            ? "JSearch"
-            : `${sourceFilter} via JSearch`,
+      source: getRunSourceLabel(provider, sourceFilter),
       provider,
       keywords,
       location,
-      jobsFound: dedupedJobs.length,
+      jobsFound: jobsToUpsert.length,
       jobsInserted,
       jobsUpdated,
+      warnings: Array.from(new Set(providerWarnings)),
+      debug: debug
+        ? {
+            importedRaw: importedJobs.length,
+            deduped: dedupedJobs.length,
+            upsertable: jobsToUpsert.length,
+            providerBatchCounts,
+          }
+        : undefined,
       jobs: upsertedJobs,
     });
   } catch (error) {
     await supabase
       .from("scrape_runs")
       .update({
-        source_platform:
-          provider === "linkedin"
-            ? "LinkedIn via ScraperAPI"
-            : provider === "jobstreet"
-              ? "JobStreet via ScraperAPI"
-              : provider === "kalibrr"
-                ? "Kalibrr via ScraperAPI"
-          : sourceFilter === "Any"
-            ? "JSearch"
-            : `${sourceFilter} via JSearch`,
+        source_platform: getRunSourceLabel(provider, sourceFilter),
         status: "Failed",
         error_message: formatErrorMessage(error),
         completed_at: new Date().toISOString(),
