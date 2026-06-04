@@ -10,6 +10,8 @@
   --border: rgba(104, 118, 255, 0.28);
   --border-soft: rgba(92, 101, 144, 0.18);
   --text: #f5f6ff;
+  --text-primary: var(--text);
+  --text-secondary: var(--muted);
   --muted: #7f8cb7;
   --muted-soft: #9ca5c9;
   --violet: #7067ff;
@@ -49,6 +51,8 @@
   --border: rgba(92, 101, 144, 0.2);
   --border-soft: rgba(92, 101, 144, 0.14);
   --text: #1a2233;
+  --text-primary: var(--text);
+  --text-secondary: var(--muted);
   --muted: #66718f;
   --muted-soft: #7d88a8;
   --violet-soft: rgba(112, 103, 255, 0.1);
@@ -152,14 +156,37 @@ button {
 .sidebar-nav {
   display: grid;
   gap: 6px;
+  position: relative;
+  isolation: isolate;
+  --sidebar-tab-height: 42px;
+  --sidebar-tab-gap: 6px;
+}
+
+.sidebar-nav::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: var(--sidebar-tab-height);
+  border-radius: 14px;
+  background: rgba(112, 103, 255, 0.18);
+  transform: translateY(calc(var(--sidebar-active-index, 0) * (var(--sidebar-tab-height) + var(--sidebar-tab-gap))));
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .sidebar-link,
 .light-toggle {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
+  height: var(--sidebar-tab-height);
+  min-height: var(--sidebar-tab-height);
   padding: 12px 12px;
   border: 1px solid transparent;
   border-radius: 14px;
@@ -175,7 +202,7 @@ button {
 
 .sidebar-link.active {
   color: var(--accent-text);
-  background: rgba(112, 103, 255, 0.18);
+  background: transparent;
 }
 
 .sidebar-bottom {
@@ -414,13 +441,31 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+  position: relative;
   padding: 4px;
   border-radius: 16px;
   background: var(--panel-soft);
   border: 1px solid rgba(92, 101, 144, 0.16);
+  --tab-gap: 6px;
+}
+
+.applications-tabs::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 14px) / 2);
+  border-radius: 12px;
+  background: var(--panel);
+  transform: translateX(calc(var(--tab-active-index, 0) * (100% + var(--tab-gap))));
+  transition: transform 330ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease;
+  pointer-events: none;
 }
 
 .applications-tab {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -447,7 +492,7 @@ button {
 
 .applications-tab.active {
   color: var(--text);
-  background: var(--panel);
+  background: transparent;
 }
 
 .summary-grid {
@@ -893,23 +938,45 @@ button {
 }
 
 .cert-filter-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
+  position: relative;
   margin-bottom: 24px;
+  padding: 5px;
+  border-radius: 18px;
+  background: var(--panel-soft);
+  border: 1px solid rgba(92, 101, 144, 0.14);
+  --cert-filter-gap: 10px;
+}
+
+.cert-filter-row::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 5px;
+  width: calc((100% - 50px) / 5);
+  border-radius: 999px;
+  background: var(--violet);
+  transform: translateX(calc(var(--cert-filter-active-index, 0) * (100% + var(--cert-filter-gap))));
+  transition: transform 330ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease;
+  pointer-events: none;
 }
 
 .cert-filter-chip {
+  position: relative;
+  z-index: 1;
   padding: 8px 14px;
   border: 0;
   border-radius: 999px;
   color: var(--muted);
-  background: var(--panel-soft);
+  background: transparent;
 }
 
 .cert-filter-chip.active {
   color: #fff;
-  background: var(--violet);
+  background: transparent;
 }
 
 .cert-provider {
@@ -969,6 +1036,7 @@ button {
   width: min(100%, 390px);
   height: 100vh;
   overflow: auto;
+  color: var(--text);
   background: var(--panel);
   border-left: 1px solid rgba(92, 101, 144, 0.24);
   box-shadow: -20px 0 50px rgba(0, 0, 0, 0.35);
@@ -1001,6 +1069,7 @@ button {
 
 .profile-panel-user strong {
   display: block;
+  color: var(--text);
   font-size: 0.95rem;
   line-height: 1.35;
   letter-spacing: 0;
@@ -1036,13 +1105,33 @@ button {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
+  position: relative;
   margin: 16px 18px;
   padding: 4px;
   border-radius: 14px;
   background: var(--panel-soft);
+  --profile-tab-gap: 6px;
+  --profile-tab-count: 3;
+}
+
+.profile-tab-row::before,
+.auth-switch-row::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 8px - (var(--profile-tab-count, 3) - 1) * var(--profile-tab-gap, 6px)) / var(--profile-tab-count, 3));
+  border-radius: 12px;
+  background: var(--panel);
+  transform: translateX(calc(var(--profile-tab-active-index, 0) * (100% + var(--profile-tab-gap, 6px))));
+  transition: transform 330ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease;
+  pointer-events: none;
 }
 
 .profile-tab {
+  position: relative;
+  z-index: 1;
   padding: 10px 12px;
   border: 0;
   border-radius: 12px;
@@ -1052,7 +1141,7 @@ button {
 
 .profile-tab.active {
   color: var(--text);
-  background: var(--panel);
+  background: transparent;
 }
 
 .profile-panel-body {
@@ -1107,6 +1196,7 @@ button {
 .profile-role-box strong {
   display: block;
   margin-bottom: 6px;
+  color: var(--text);
   font-size: 1rem;
 }
 
@@ -1900,14 +1990,32 @@ button {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+  position: relative;
   margin-top: 16px;
   padding: 6px;
   border-radius: 18px;
   background: var(--panel-soft);
   border: 1px solid rgba(92, 101, 144, 0.14);
+  --category-tab-gap: 8px;
+}
+
+.category-bar::before {
+  content: "";
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 6px;
+  width: calc((100% - 28px) / 3);
+  border-radius: 14px;
+  background: var(--panel);
+  transform: translateX(calc(var(--category-active-index, 0) * (100% + var(--category-tab-gap))));
+  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1), background-color 180ms ease;
+  pointer-events: none;
 }
 
 .category-chip {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1934,7 +2042,7 @@ button {
 
 .category-chip.active {
   color: var(--text);
-  background: var(--panel);
+  background: transparent;
 }
 
 .listing-caption {
@@ -2109,16 +2217,23 @@ button {
   box-shadow: none;
 }
 
-.theme-light .sidebar-link.active,
 .theme-light .light-toggle:hover,
-.theme-light .sidebar-link:hover {
+.theme-light .sidebar-link:not(.active):hover {
+  background: rgba(112, 103, 255, 0.1);
+}
+
+.theme-light .sidebar-link.active {
+  background: transparent;
+}
+
+.theme-light .sidebar-nav::before {
   background: rgba(112, 103, 255, 0.1);
 }
 
 .theme-light .applications-tabs,
 .theme-light .profile-tab-row,
 .theme-light .category-bar,
-.theme-light .cert-filter-chip {
+.theme-light .cert-filter-row {
   background: var(--panel-soft);
 }
 
@@ -2127,6 +2242,12 @@ button {
 .theme-light .category-chip.active {
   color: var(--text);
   background: var(--panel);
+}
+
+.theme-light .applications-tab.active,
+.theme-light .profile-tab.active,
+.theme-light .category-chip.active {
+  background: transparent;
 }
 
 .theme-light .ghost-action,
@@ -2154,6 +2275,40 @@ button {
 
 .theme-light .listing-score.score-red {
   background: rgba(196, 90, 120, 0.12);
+}
+
+.theme-light .profile-overlay {
+  background: rgba(26, 34, 51, 0.34);
+}
+
+.theme-light .profile-panel,
+.theme-light .job-modal {
+  color: var(--text);
+  background: var(--panel);
+  border-color: var(--border-soft);
+}
+
+.theme-light .profile-panel-header,
+.theme-light .profile-role-box,
+.theme-light .job-detail-item,
+.theme-light .progress-tags span,
+.theme-light .ai-recommendation-pill {
+  background: var(--panel-soft);
+  border-color: var(--border-soft);
+}
+
+.theme-light .profile-panel-user strong,
+.theme-light .profile-role-box strong,
+.theme-light .job-detail-item span,
+.theme-light .ai-recommendation-pill strong {
+  color: var(--text);
+}
+
+.theme-light .profile-panel-user span,
+.theme-light .profile-role-box span,
+.theme-light .ai-recommendation-pill span,
+.theme-light .ai-empty-note {
+  color: var(--muted);
 }
 
 .save-action.saved {
@@ -2193,6 +2348,20 @@ button {
   justify-content: center;
   align-items: center;
   padding: 24px;
+  animation: modal-overlay-in 220ms ease both;
+}
+
+.job-modal-overlay.closing {
+  animation: modal-overlay-out 220ms ease both;
+}
+
+.job-modal-overlay .job-modal {
+  animation: job-modal-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: center;
+}
+
+.job-modal-overlay.closing .job-modal {
+  animation: job-modal-out 220ms ease both;
 }
 
 .auth-overlay {
@@ -2212,9 +2381,12 @@ button {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+  position: relative;
   padding: 4px;
   border-radius: 14px;
   background: var(--panel-soft);
+  --profile-tab-count: 2;
+  --profile-tab-gap: 8px;
 }
 
 .auth-role-row {
@@ -2293,6 +2465,46 @@ button {
   }
 }
 
+@keyframes modal-overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes job-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes job-modal-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
 @keyframes ai-liquid-flow {
   0%,
   100% {
@@ -2334,8 +2546,22 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .ai-studio-card::before,
+  .applications-tabs::before,
+  .profile-tab-row::before,
+  .auth-switch-row::before,
+  .cert-filter-row::before,
+  .category-bar::before,
+  .sidebar-nav::before,
   .profile-primary-button,
   .roadmap-cta {
+    animation: none;
+    transition: none;
+  }
+
+  .job-modal-overlay,
+  .job-modal-overlay.closing,
+  .job-modal-overlay .job-modal,
+  .job-modal-overlay.closing .job-modal {
     animation: none;
   }
 }
@@ -2364,6 +2590,7 @@ button {
   .announcement-card,
   .listing-top,
   .category-bar,
+  .cert-filter-row,
   .summary-grid,
   .stage-row {
     grid-template-columns: 1fr;
@@ -2424,6 +2651,26 @@ button {
 
   .job-modal-overlay {
     padding: 12px;
+  }
+
+  .category-bar::before {
+    top: 6px;
+    left: 6px;
+    right: 6px;
+    bottom: auto;
+    width: auto;
+    height: calc((100% - 28px) / 3);
+    transform: translateY(calc(var(--category-active-index, 0) * (100% + var(--category-tab-gap))));
+  }
+
+  .cert-filter-row::before {
+    top: 5px;
+    left: 5px;
+    right: 5px;
+    bottom: auto;
+    width: auto;
+    height: calc((100% - 50px) / 5);
+    transform: translateY(calc(var(--cert-filter-active-index, 0) * (100% + var(--cert-filter-gap))));
   }
 }
 
@@ -2769,6 +3016,59 @@ button {
   transform: translateY(-1px);
 }
 
+.theme-light .subscription-renewal-alert {
+  color: var(--text);
+  background: #fff8dd;
+  border-color: rgba(154, 114, 0, 0.24);
+  box-shadow: 0 18px 42px rgba(26, 34, 51, 0.12);
+}
+
+.theme-light .subscription-renewal-alert strong,
+.theme-light .subscription-plan-label,
+.theme-light .sidebar-subscription-kicker,
+.theme-light .profile-subscription-kicker,
+.theme-light .premium-lock-icon {
+  color: #8a6400;
+}
+
+.theme-light .subscription-renewal-alert p,
+.theme-light .premium-lock-card p,
+.theme-light .sidebar-subscription-card p,
+.theme-light .subscription-hero-card > p,
+.theme-light .subscription-plan-card p,
+.theme-light .subscription-benefits-grid p,
+.theme-light .profile-subscription-card p {
+  color: var(--muted);
+}
+
+.theme-light .premium-lock-card,
+.theme-light .subscription-hero-card,
+.theme-light .profile-subscription-card {
+  color: var(--text);
+  background: var(--panel);
+  border-color: var(--border-soft);
+  box-shadow: none;
+}
+
+.theme-light .premium-benefits span,
+.theme-light .subscription-benefits-grid div {
+  color: var(--text);
+  background: var(--panel-soft);
+  border-color: var(--border-soft);
+}
+
+.theme-light .sidebar-subscription-card,
+.theme-light .subscription-plan-card {
+  color: var(--text);
+  background: linear-gradient(135deg, rgba(88, 84, 216, 0.08), rgba(154, 114, 0, 0.1));
+  border-color: rgba(92, 101, 144, 0.18);
+}
+
+.theme-light .subscription-renewal-close {
+  color: var(--text);
+  background: rgba(154, 114, 0, 0.1);
+}
+
 @media (max-width: 760px) {
   .profile-subscription-card {
     flex-direction: column;
@@ -2797,6 +3097,7 @@ button {
 
 .sidebar-nav {
   gap: 4px;
+  --sidebar-tab-gap: 4px;
 }
 
 .sidebar-link,
@@ -2855,6 +3156,14 @@ button {
   .sidebar-link,
   .light-toggle {
     padding: 8px 10px;
+    border-radius: 12px;
+  }
+
+  .sidebar-nav {
+    --sidebar-tab-height: 36px;
+  }
+
+  .sidebar-nav::before {
     border-radius: 12px;
   }
 

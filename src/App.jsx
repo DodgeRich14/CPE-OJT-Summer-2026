@@ -1393,6 +1393,7 @@ function App() {
   const [passwordForm, setPasswordForm] = useState({ password: "", confirmPassword: "" });
   const [passwordFeedback, setPasswordFeedback] = useState("");
   const [isRenewalNoticeDismissed, setIsRenewalNoticeDismissed] = useState(false);
+  const [closingJobModal, setClosingJobModal] = useState(false);
   const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
   const hasActiveSubscription = state.auth.isAuthenticated && state.subscription?.status === "active";
   const renewalDate = state.subscription?.renewalDate ? new Date(state.subscription.renewalDate) : null;
@@ -1927,6 +1928,19 @@ function App() {
       })),
     [rankedListings],
   );
+  const categoryActiveIndex = Math.max(
+    counts.findIndex((item) => item.id === state.activeCategory),
+    0,
+  );
+  const applicationsTabIndex = state.applicationsTab === "saved" ? 1 : 0;
+  const progressTabIndex = Math.max(
+    progressTabs.findIndex((tab) => tab.id === state.progressTab),
+    0,
+  );
+  const certificationFilterIndex = Math.max(
+    certificationCategories.findIndex((category) => category === state.certificationFilter),
+    0,
+  );
 
   const appliedCards = useMemo(
     () =>
@@ -1989,7 +2003,16 @@ function App() {
     : "";
   const topRecommendations = rankedListings.slice(0, 3);
   const currentSidebarItems = isAdmin ? adminSidebarItems : sidebarItems;
+  const sidebarActiveIndex = Math.max(
+    currentSidebarItems.findIndex((item) => item.id === state.activeSidebar),
+    0,
+  );
   const profileTabs = isAdmin ? adminProfileTabs : applicantProfileTabs;
+  const profileTabIndex = Math.max(
+    profileTabs.findIndex((tab) => tab.id === state.profilePanelTab),
+    0,
+  );
+  const authSwitchIndex = state.authMode === "signup" ? 1 : 0;
   const registeredAdminUsers = state.adminUsers.filter((item) => item.role !== "Admin");
   const filteredAdminUsers = useMemo(() => {
     const normalized = adminUserSearchQuery.trim().toLowerCase();
@@ -2354,10 +2377,15 @@ function App() {
     const jobId = typeof jobOrId === "object" ? jobOrId.id : jobOrId;
     const listing = typeof jobOrId === "object" ? jobOrId : listings.find((item) => item.id === jobId);
     const externalUrl = listing?.sourceUrl;
+    const shouldAnimateModalClose = state.selectedJobId === jobId;
 
     if (!state.auth.isAuthenticated) {
       openAuthModal("signup");
       return;
+    }
+
+    if (shouldAnimateModalClose) {
+      setClosingJobModal(true);
     }
 
     setState((current) => ({
@@ -2365,7 +2393,7 @@ function App() {
       activeSidebar: "applications",
       applicationsTab: "applied",
       expandedApplicationId: jobId,
-      selectedJobId: null,
+      selectedJobId: shouldAnimateModalClose ? current.selectedJobId : null,
       applications: current.applications.includes(jobId) ? current.applications : [...current.applications, jobId],
       saved: current.saved.filter((id) => id !== jobId),
       applicationStatusById: current.applicationStatusById[jobId]
@@ -2378,6 +2406,16 @@ function App() {
 
     if (externalUrl) {
       window.open(externalUrl, "_blank", "noopener,noreferrer");
+    }
+
+    if (shouldAnimateModalClose) {
+      window.setTimeout(() => {
+        setState((current) => ({
+          ...current,
+          selectedJobId: null,
+        }));
+        setClosingJobModal(false);
+      }, 220);
     }
   }
 
@@ -2396,10 +2434,24 @@ function App() {
   }
 
   function openJobDetails(jobId) {
+    setClosingJobModal(false);
     setState((current) => ({
       ...current,
       selectedJobId: jobId,
     }));
+  }
+
+  function closeJobDetails() {
+    if (!state.selectedJobId || closingJobModal) return;
+
+    setClosingJobModal(true);
+    window.setTimeout(() => {
+      setState((current) => ({
+        ...current,
+        selectedJobId: null,
+      }));
+      setClosingJobModal(false);
+    }, 220);
   }
 
   function openAdminUserDetails(userId) {
@@ -3154,7 +3206,12 @@ function App() {
             <img src="/skillbridge-logo.png" alt="SkillBridge" className="sidebar-brand-logo" />
           </div>
 
-          <nav className="sidebar-nav">
+          <nav
+            className="sidebar-nav"
+            style={{
+              "--sidebar-active-index": sidebarActiveIndex,
+            }}
+          >
             {currentSidebarItems.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
@@ -3881,7 +3938,12 @@ function App() {
                 />
               </label>
 
-              <div className="category-bar">
+              <div
+                className="category-bar"
+                style={{
+                  "--category-active-index": categoryActiveIndex,
+                }}
+              >
                 {counts.map(({ id, label, count, icon: Icon }) => (
                   <button
                     key={id}
@@ -3979,7 +4041,10 @@ function App() {
               </button>
             </div>
 
-            <div className="applications-tabs">
+            <div
+              className="applications-tabs"
+              style={{ "--tab-active-index": applicationsTabIndex }}
+            >
               <button className={`applications-tab${state.applicationsTab === "applied" ? " active" : ""}`} type="button" onClick={() => patchState({ applicationsTab: "applied" })}>
                 <BriefcaseBusiness size={14} />
                 <span>Applied</span>
@@ -4156,7 +4221,10 @@ function App() {
               </article>
             </div>
 
-            <div className="applications-tabs progress-tabs">
+            <div
+              className="applications-tabs progress-tabs"
+              style={{ "--tab-active-index": progressTabIndex }}
+            >
               {progressTabs.map((tab) => (
                 <button key={tab.id} className={`applications-tab${state.progressTab === tab.id ? " active" : ""}`} type="button" onClick={() => patchState({ progressTab: tab.id })}>
                   <span>{tab.label}</span>
@@ -4424,7 +4492,10 @@ function App() {
               <span>Links to practice exams and official exam portals</span>
             </div>
 
-            <div className="cert-filter-row">
+            <div
+              className="cert-filter-row"
+              style={{ "--cert-filter-active-index": certificationFilterIndex }}
+            >
               {certificationCategories.map((category) => (
                 <button
                   key={category}
@@ -4506,7 +4577,13 @@ function App() {
               </button>
             </div>
 
-            <div className="profile-tab-row">
+            <div
+              className="profile-tab-row"
+              style={{
+                "--profile-tab-active-index": profileTabIndex,
+                "--profile-tab-count": profileTabs.length,
+              }}
+            >
               {profileTabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -5125,7 +5202,10 @@ function App() {
             <div className="profile-panel-body">
               <form className="profile-section-stack" onSubmit={submitAuth}>
                 {(state.authMode === "login" || state.authMode === "signup") && (
-                  <div className="auth-switch-row">
+                  <div
+                    className="auth-switch-row"
+                    style={{ "--profile-tab-active-index": authSwitchIndex }}
+                  >
                     <button
                       className={`profile-tab${state.authMode === "login" ? " active" : ""}`}
                       type="button"
@@ -5250,7 +5330,7 @@ function App() {
       )}
 
       {selectedJob && (
-        <div className="profile-overlay job-modal-overlay" onClick={() => patchState({ selectedJobId: null })}>
+        <div className={`profile-overlay job-modal-overlay${closingJobModal ? " closing" : ""}`} onClick={closeJobDetails}>
           <aside className="profile-panel job-modal" onClick={(event) => event.stopPropagation()}>
             <div className="profile-panel-header">
               <div className="profile-panel-user">
@@ -5260,7 +5340,7 @@ function App() {
                   <span>{selectedJob.company}</span>
                 </div>
               </div>
-              <button className="profile-close" type="button" onClick={() => patchState({ selectedJobId: null })}>
+              <button className="profile-close" type="button" onClick={closeJobDetails}>
                 <X size={16} />
               </button>
             </div>
