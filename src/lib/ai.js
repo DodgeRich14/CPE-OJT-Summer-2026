@@ -1,5 +1,61 @@
 import { supabase } from "./supabase";
 
+function stripCssBlocks(value) {
+  let cleaned = value;
+  let previous = "";
+
+  while (cleaned !== previous) {
+    previous = cleaned;
+    cleaned = cleaned.replace(/[^{}]*\{[^{}]*\}/g, " ");
+  }
+
+  return cleaned;
+}
+
+function cleanJobText(value) {
+  const source = String(value || "").trim();
+  if (!source) return "";
+
+  if (typeof DOMParser !== "undefined") {
+    const parseText = (html) => {
+      const document = new DOMParser().parseFromString(html, "text/html");
+      document.querySelectorAll("script, style, noscript, svg").forEach((node) => node.remove());
+      return String(document.body?.textContent || "");
+    };
+    const firstPass = parseText(source);
+    const cleaned = /<\/?[a-z][\s\S]*>/i.test(firstPass) ? parseText(firstPass) : firstPass;
+
+    return stripCssBlocks(cleaned)
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  return stripCssBlocks(source
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#(?:39|x27);/gi, "'")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanJobRecord(job) {
+  const description = cleanJobText(job?.description);
+  const responsibilities = (job?.responsibilities ?? [])
+    .map(cleanJobText)
+    .filter((item) => item && !/^(?:work from home|remote|hybrid|on-?site)$/i.test(item));
+
+  return {
+    ...job,
+    description,
+    responsibilities,
+  };
+}
+
 function ensureSupabase() {
   if (!supabase) {
     throw new Error("Supabase is not configured for this app.");
@@ -18,7 +74,7 @@ async function loadOpenJobs(selectClause) {
     throw new Error(error.message || "Failed to load jobs.");
   }
 
-  return data ?? [];
+  return (data ?? []).map(cleanJobRecord);
 }
 
 function titleCase(value) {
@@ -544,7 +600,7 @@ function computeRecommendationFallback(payload, jobs) {
       const descriptionSimilarityScore = computeDescriptionSimilarityScore(profile, resumeProfile, job, requiredSkills, rawMatchedSkills);
       const locationMatchScore = computeLocationMatchScore(profile, job);
       const freshnessScore = computeFreshnessScore(job.posted_at);
-      const skillGaps = requiredSkills.filter((required) => !getOverlapMatches(rawMatchedSkills, [required]).length).slice(0, 4);
+      const skillGaps = requiredSkills.filter((required) => !getOverlapMatches(rawMatchedSkills, [required]).length);
       let rawScore = Math.round(
         computeWeightedAverageScore([
           { score: titleMatchScore, weight: 0.35 },
@@ -577,7 +633,7 @@ function computeRecommendationFallback(payload, jobs) {
         job,
         job_id: job.id,
         match_score: score,
-        matched_skills: matchedSkills,
+        matched_skills: rawMatchedSkills,
         skill_gaps: skillGaps,
         score_breakdown: {
           job_title_match: Math.round(titleMatchScore),

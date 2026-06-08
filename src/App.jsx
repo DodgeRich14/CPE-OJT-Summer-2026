@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   ArrowRight,
   AtSign,
   BadgeCheck,
   BookOpen,
   BriefcaseBusiness,
+  ChevronLeft,
   ChevronDown,
+  ChevronRight,
   ChevronUp,
   Compass,
   CreditCard,
@@ -152,6 +155,17 @@ function formatSalaryMeta(job) {
   }
 
   return "Salary not listed";
+}
+
+function getDisplayJobDescription(description) {
+  const cleaned = String(description || "").trim();
+  const meaningfulWords = cleaned.match(/[a-z]{3,}/gi) ?? [];
+
+  if (meaningfulWords.length < 12) {
+    return "The original job source did not provide a detailed description for this role. Review the source listing for the latest responsibilities and requirements.";
+  }
+
+  return cleaned;
 }
 
 function normalizeSearchTerms(values) {
@@ -320,17 +334,25 @@ function getApplicantSkills(profile) {
   return [...new Set((Array.isArray(profile.skills) ? profile.skills : []).filter(Boolean))];
 }
 
-function getApplicantMatchedSkills(applicantSkills, requiredSkills) {
-  return applicantSkills.filter((skill) => getOverlapMatches([skill], requiredSkills).length > 0);
-}
+function partitionRequiredSkills(applicantSkills, requiredSkills) {
+  const uniqueRequirements = [
+    ...new Map(
+      (requiredSkills ?? [])
+        .map((skill) => String(skill || "").trim())
+        .filter(Boolean)
+        .map((skill) => [normalizeSkillForMatch(skill), skill]),
+    ).values(),
+  ];
+  const matched = uniqueRequirements.filter((required) =>
+    applicantSkills.some((skill) => skillsMatch(skill, required)),
+  );
+  const matchedKeys = new Set(matched.map(normalizeSkillForMatch));
 
-function sanitizeMatchedSkills(candidateSkills, applicantSkills, requiredSkills = []) {
-  const applicantMatches = getOverlapMatches(applicantSkills, candidateSkills);
-  if (requiredSkills.length === 0) {
-    return [...new Set(applicantMatches)];
-  }
-
-  return [...new Set(applicantMatches.filter((skill) => getOverlapMatches([skill], requiredSkills).length > 0))];
+  return {
+    required: uniqueRequirements,
+    matched,
+    gaps: uniqueRequirements.filter((required) => !matchedKeys.has(normalizeSkillForMatch(required))),
+  };
 }
 
 function filterSpecificMatchedSkills(skills) {
@@ -560,14 +582,13 @@ function getSkillEvidenceCeiling(requiredCount, matchedCount, roleOverlapCount =
 
 function computeListingSimilarity(listing, profile, recommendation = null) {
   const profileSkills = getApplicantSkills(profile);
-  const requiredSkills =
+  const inferredRequiredSkills =
     Array.isArray(listing.requiredSkills) && listing.requiredSkills.length > 0
       ? listing.requiredSkills
       : extractListingSkills(listing.title, listing.meta, listing.overview, listing.setup, ...(listing.sourceResponsibilities ?? []));
-  const rawMatchedSkills =
-    recommendation?.matched_skills?.length
-      ? sanitizeMatchedSkills(recommendation.matched_skills, profileSkills, requiredSkills)
-      : getOverlapMatches(profileSkills, requiredSkills);
+  const requirementPartition = partitionRequiredSkills(profileSkills, inferredRequiredSkills);
+  const requiredSkills = requirementPartition.required;
+  const rawMatchedSkills = requirementPartition.matched;
   const matchedSkills = filterSpecificMatchedSkills(rawMatchedSkills);
   const serverScore = typeof recommendation?.match_score === "number" ? clampScore(recommendation.match_score, 0, 100) : null;
 
@@ -1394,6 +1415,7 @@ function App() {
   const [passwordFeedback, setPasswordFeedback] = useState("");
   const [isRenewalNoticeDismissed, setIsRenewalNoticeDismissed] = useState(false);
   const [closingJobModal, setClosingJobModal] = useState(false);
+  const [jobNavigationDirection, setJobNavigationDirection] = useState(null);
   const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
   const hasActiveSubscription = state.auth.isAuthenticated && state.subscription?.status === "active";
   const renewalDate = state.subscription?.renewalDate ? new Date(state.subscription.renewalDate) : null;
@@ -1767,16 +1789,14 @@ function App() {
       const remoteListings = state.liveJobs.map((job, index) => {
         const recommendation = recommendationMap.get(String(job.id));
         const applicantSkills = getApplicantSkills(state.profile);
-        const resolvedRequiredSkills =
+        const inferredRequiredSkills =
           job.required_skills?.length
             ? job.required_skills
             : extractListingSkills(job.title, job.description, ...(job.responsibilities ?? []));
-        const matchedSkills = recommendation?.matched_skills?.length
-          ? sanitizeMatchedSkills(recommendation.matched_skills, applicantSkills, resolvedRequiredSkills)
-          : getOverlapMatches(applicantSkills, resolvedRequiredSkills);
-        const skillGaps =
-          recommendation?.skill_gaps ??
-          resolvedRequiredSkills.filter((required) => !getOverlapMatches(applicantSkills, [required]).length);
+        const requirementPartition = partitionRequiredSkills(applicantSkills, inferredRequiredSkills);
+        const resolvedRequiredSkills = requirementPartition.required;
+        const matchedSkills = requirementPartition.matched;
+        const skillGaps = requirementPartition.gaps;
 
         return {
           id: job.id,
@@ -1817,9 +1837,7 @@ function App() {
         const similarity = computeListingSimilarity(listing, state.profile, recommendation);
         const matchedSkills = similarity.matchedSkills;
         const rawMatchedSkills = similarity.rawMatchedSkills;
-        const gaps =
-          recommendation?.skill_gaps ??
-          listing.requiredSkills.filter((required) => !getOverlapMatches(rawMatchedSkills, [required]).length);
+        const gaps = partitionRequiredSkills(getApplicantSkills(state.profile), listing.requiredSkills).gaps;
 
         return {
           ...listing,
@@ -1978,6 +1996,12 @@ function App() {
     (item) => state.certificationFilter === "All" || item.track === state.certificationFilter,
   );
   const selectedJob = listings.find((listing) => listing.id === state.selectedJobId) ?? null;
+  const selectedCategoryRankedListings = selectedJob
+    ? rankedListings.filter((listing) => listing.category === selectedJob.category)
+    : [];
+  const selectedRankedJobIndex = selectedJob
+    ? selectedCategoryRankedListings.findIndex((listing) => String(listing.id) === String(selectedJob.id))
+    : -1;
   const selectedJobRecommendation = selectedJob ? recommendationMap.get(String(selectedJob.id)) ?? null : null;
   const selectedJobMatchedSkills = selectedJob
     ? getRelevantSkills(selectedJob)
@@ -2255,10 +2279,21 @@ function App() {
   }
 
   function toggleTheme() {
-    setState((current) => ({
-      ...current,
-      theme: current.theme === "dark" ? "light" : "dark",
-    }));
+    const updateTheme = () => {
+      setState((current) => ({
+        ...current,
+        theme: current.theme === "dark" ? "light" : "dark",
+      }));
+    };
+
+    if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      updateTheme();
+      return;
+    }
+
+    document.startViewTransition(() => {
+      flushSync(updateTheme);
+    });
   }
 
   function handleAnnouncementAction(slide) {
@@ -2435,9 +2470,21 @@ function App() {
 
   function openJobDetails(jobId) {
     setClosingJobModal(false);
+    setJobNavigationDirection(null);
     setState((current) => ({
       ...current,
       selectedJobId: jobId,
+    }));
+  }
+
+  function navigateJobDetails(offset) {
+    const nextJob = selectedCategoryRankedListings[selectedRankedJobIndex + offset];
+    if (!nextJob) return;
+
+    setJobNavigationDirection(offset > 0 ? "next" : "previous");
+    setState((current) => ({
+      ...current,
+      selectedJobId: nextJob.id,
     }));
   }
 
@@ -2914,7 +2961,7 @@ function App() {
   }
 
   function getRelevantSkills(listing) {
-    return getApplicantMatchedSkills(getApplicantSkills(state.profile), listing.requiredSkills);
+    return partitionRequiredSkills(getApplicantSkills(state.profile), listing.requiredSkills).matched;
   }
 
   async function submitAuth(event) {
@@ -3265,7 +3312,7 @@ function App() {
         </div>
       </aside>
 
-      <main className="dashboard-main">
+      <main key={`${isAdmin ? "admin" : "applicant"}-${state.activeSidebar}`} className="dashboard-main content-appear">
         {!isAdmin && showRenewalNotice && (
           <div
             className="subscription-renewal-alert"
@@ -3847,24 +3894,33 @@ function App() {
                 <strong>{announcementSlides.length}</strong>
               </div>
 
-              <article className="announcement-card">
-                <div className="announcement-icon">
-                  <ShieldCheck size={15} />
+              <div className="announcement-viewport">
+                <div
+                  className="announcement-track"
+                  style={{ "--announcement-active-index": activeAnnouncement }}
+                >
+                  {announcementSlides.map((slide) => (
+                    <article key={slide.id} className="announcement-card">
+                      <div className="announcement-icon">
+                        <ShieldCheck size={15} />
+                      </div>
+                      <div className="announcement-content">
+                        <div className="announcement-pills">
+                          <span>{slide.tag}</span>
+                          <span>{slide.label}</span>
+                        </div>
+                        <h2>{slide.title}</h2>
+                        <p>{slide.body}</p>
+                        <button className="announcement-link" type="button" onClick={() => handleAnnouncementAction(slide)}>
+                          {slide.link}
+                          <ArrowRight size={13} />
+                        </button>
+                      </div>
+                      <time>{slide.date}</time>
+                    </article>
+                  ))}
                 </div>
-                <div className="announcement-content">
-                  <div className="announcement-pills">
-                    <span>{announcementSlides[activeAnnouncement].tag}</span>
-                    <span>{announcementSlides[activeAnnouncement].label}</span>
-                  </div>
-                  <h2>{announcementSlides[activeAnnouncement].title}</h2>
-                  <p>{announcementSlides[activeAnnouncement].body}</p>
-                  <button className="announcement-link" type="button" onClick={() => handleAnnouncementAction(announcementSlides[activeAnnouncement])}>
-                    {announcementSlides[activeAnnouncement].link}
-                    <ArrowRight size={13} />
-                  </button>
-                </div>
-                <time>{announcementSlides[activeAnnouncement].date}</time>
-              </article>
+              </div>
 
               <div className="announcement-carousel">
                 {announcementSlides.map((slide, index) => (
@@ -3960,7 +4016,7 @@ function App() {
 
               <p className="listing-caption">FEDERATED MATCHES | ranked in SkillBridge, applied on the original source site</p>
 
-              <div className="listing-stack">
+              <div key={state.activeCategory} className="listing-stack content-appear">
                 {filteredListings.map((listing) => {
                   const isApplied = state.applications.includes(listing.id);
                   const isSaved = state.saved.includes(listing.id);
@@ -4072,7 +4128,7 @@ function App() {
               </article>
             </div>
 
-            <div className="application-list">
+            <div key={state.applicationsTab} className="application-list content-appear">
               {state.applicationsTab === "applied" &&
                 activeApplicationCards.map((card) => {
                   const expanded = state.expandedApplicationId === card.id;
@@ -4232,7 +4288,7 @@ function App() {
               ))}
             </div>
 
-            <div className="progress-card-list">
+            <div key={state.progressTab} className="progress-card-list content-appear">
               {visibleProgressCards.map((card) => (
                 <article key={card.id} className={`progress-card ${card.statusClass}`}>
                   <div className="progress-card-head">
@@ -4596,7 +4652,7 @@ function App() {
               ))}
             </div>
 
-            <div className="profile-panel-body">
+            <div key={state.profilePanelTab} className="profile-panel-body content-appear">
               {state.profilePanelTab === "info" && !isAdmin && (
                 <div className="profile-section-stack">
                   <div className="profile-label-group">
@@ -5199,7 +5255,7 @@ function App() {
               </button>
             </div>
 
-            <div className="profile-panel-body">
+            <div key={state.authMode} className="profile-panel-body content-appear">
               <form className="profile-section-stack" onSubmit={submitAuth}>
                 {(state.authMode === "login" || state.authMode === "signup") && (
                   <div
@@ -5331,7 +5387,11 @@ function App() {
 
       {selectedJob && (
         <div className={`profile-overlay job-modal-overlay${closingJobModal ? " closing" : ""}`} onClick={closeJobDetails}>
-          <aside className="profile-panel job-modal" onClick={(event) => event.stopPropagation()}>
+          <aside
+            key={selectedJob.id}
+            className={`profile-panel job-modal${jobNavigationDirection ? ` job-nav-${jobNavigationDirection}` : ""}`}
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="profile-panel-header">
               <div className="profile-panel-user">
                 <div className={`sidebar-avatar large ${selectedJob.accent}`}>{selectedJob.initial}</div>
@@ -5340,9 +5400,32 @@ function App() {
                   <span>{selectedJob.company}</span>
                 </div>
               </div>
-              <button className="profile-close" type="button" onClick={closeJobDetails}>
-                <X size={16} />
-              </button>
+              <div className="job-modal-header-actions">
+                <div className="job-modal-navigation" aria-label={`Browse ranked ${selectedJob.category}`}>
+                  <button
+                    className="job-nav-button"
+                    type="button"
+                    aria-label={`Previous ranked ${selectedJob.category}`}
+                    disabled={selectedRankedJobIndex <= 0}
+                    onClick={() => navigateJobDetails(-1)}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span>{selectedRankedJobIndex + 1} / {selectedCategoryRankedListings.length}</span>
+                  <button
+                    className="job-nav-button"
+                    type="button"
+                    aria-label={`Next ranked ${selectedJob.category}`}
+                    disabled={selectedRankedJobIndex < 0 || selectedRankedJobIndex >= selectedCategoryRankedListings.length - 1}
+                    onClick={() => navigateJobDetails(1)}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+                <button className="profile-close" type="button" onClick={closeJobDetails}>
+                  <X size={16} />
+                </button>
+              </div>
             </div>
 
             <div className="profile-panel-body">
@@ -5361,7 +5444,7 @@ function App() {
 
                 <div className="profile-role-box">
                   <strong>About this job</strong>
-                  <span>{selectedJob.sourceDescription || "The original job source did not provide a detailed description for this role."}</span>
+                  <span>{getDisplayJobDescription(selectedJob.sourceDescription)}</span>
                 </div>
 
                 {selectedJob.sourceResponsibilities.length > 0 ? (

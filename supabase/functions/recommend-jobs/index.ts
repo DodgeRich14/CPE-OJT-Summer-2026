@@ -1006,7 +1006,7 @@ Deno.serve(async (req) => {
             location_match: Math.round(locationMatchScore),
             freshness: Math.round(freshnessScore),
           },
-          matched_skills: matchedSkills,
+          matched_skills: rawMatchedSkills,
           skill_gaps: skillGaps,
           reason: buildRecommendationReason(job as Record<string, unknown>, matchedSkills, skillGaps, descriptionSimilarityScore),
         };

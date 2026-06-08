@@ -283,20 +283,38 @@ function buildSearchQuery(keyword: string, location: string) {
 
 function decodeHtml(value: string) {
   return value
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/g, "'");
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&#x27;/gi, "'");
 }
 
 function stripHtml(value: string) {
-  return decodeHtml(value.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " "));
+  const decoded = decodeHtml(decodeHtml(value));
+  let cleaned = decoded
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<svg[\s\S]*?<\/svg>/gi, " ")
+    .replace(/<[^>]+>/g, " ");
+
+  let previous = "";
+  while (cleaned !== previous) {
+    previous = cleaned;
+    cleaned = cleaned.replace(/[^{}]*\{[^{}]*\}/g, " ");
+  }
+
+  return cleaned;
 }
 
 function normalizeText(value: string) {
   return normalizeSpace(stripHtml(value));
+}
+
+function safeText(value: unknown) {
+  return typeof value === "string" ? normalizeText(value) : "";
 }
 
 function matchFirst(value: string, pattern: RegExp) {
@@ -524,7 +542,7 @@ async function fetchSearchApiJobs(
 function mapSearchApiJob(job: Record<string, unknown>, fallbackLocation: string) {
   const title = safeString(job.title);
   const companyName = safeString(job.company_name ?? job.company);
-  const description = safeString(job.description ?? "");
+  const description = safeText(job.description ?? "");
   const location = safeString(job.location) || fallbackLocation;
   const via = safeString(job.via).replace(/^via\s+/i, "");
   const applyLinks = Array.isArray(job.apply_links) ? (job.apply_links as Record<string, unknown>[]) : [];
@@ -634,7 +652,7 @@ async function fetchSerpApiJobs(
 function mapSerpApiJob(job: Record<string, unknown>, fallbackLocation: string) {
   const title = safeString(job.title ?? job.job_title);
   const companyName = safeString(job.company_name ?? job.company);
-  const description = safeString(job.description ?? "");
+  const description = safeText(job.description ?? "");
   const location = safeString(job.location ?? job.locations) || fallbackLocation;
   const via = safeString(job.via).replace(/^via\s+/i, "");
   const applyOptions = Array.isArray(job.apply_options) ? (job.apply_options as Record<string, unknown>[]) : [];
@@ -977,7 +995,7 @@ async function fetchKalibrrJobs(
 function mapJSearchJob(job: JSearchJob, fallbackLocation: string) {
   const title = safeString(job.job_title ?? job.title);
   const companyName = safeString(job.employer_name ?? job.company_name ?? job.company);
-  const description = safeString(job.job_description ?? job.description) || `${title} role imported from JSearch.`;
+  const description = safeText(job.job_description ?? job.description) || `${title} role imported from JSearch.`;
   const locationParts = [
     safeString(job.job_city),
     safeString(job.job_state),

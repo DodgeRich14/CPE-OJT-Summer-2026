@@ -95,6 +95,32 @@ body {
   background: var(--bg);
 }
 
+p {
+  text-align: justify;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 300ms;
+  animation-timing-function: ease-in-out;
+}
+
+.content-appear {
+  animation: content-appear 280ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes content-appear {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 h1,
 h2,
 h3,
@@ -1032,17 +1058,28 @@ button {
   z-index: 20;
 }
 
+.profile-overlay:not(.job-modal-overlay) {
+  animation: modal-overlay-in 220ms ease both;
+}
+
 .profile-panel {
+  display: flex;
+  flex-direction: column;
   width: min(100%, 390px);
   height: 100vh;
-  overflow: auto;
+  overflow: hidden;
   color: var(--text);
   background: var(--panel);
   border-left: 1px solid rgba(92, 101, 144, 0.24);
   box-shadow: -20px 0 50px rgba(0, 0, 0, 0.35);
 }
 
+.profile-overlay:not(.job-modal-overlay) > .profile-panel {
+  animation: profile-panel-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .profile-panel-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1102,6 +1139,7 @@ button {
 }
 
 .profile-tab-row {
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 6px;
@@ -1145,6 +1183,11 @@ button {
 }
 
 .profile-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px 24px 24px;
 }
 
@@ -1201,7 +1244,9 @@ button {
 }
 
 .profile-role-box span {
+  display: block;
   color: var(--muted);
+  text-align: justify;
 }
 
 .section-kicker {
@@ -1759,10 +1804,32 @@ button {
 }
 
 .announcement-card {
+  flex: 0 0 100%;
+  min-width: 0;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 18px;
   padding: var(--card-padding);
+}
+
+.announcement-viewport {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 20px;
+}
+
+.announcement-track {
+  display: flex;
+  width: 100%;
+  max-width: 100%;
+  transform: translateX(calc(var(--announcement-active-index, 0) * -100%));
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.announcement-content {
+  min-width: 0;
 }
 
 .announcement-icon {
@@ -1773,10 +1840,6 @@ button {
   border-radius: 14px;
   color: #c6c3ff;
   background: rgba(112, 103, 255, 0.14);
-}
-
-.announcement-content {
-  animation: fade-up 280ms ease;
 }
 
 .announcement-pills {
@@ -1841,6 +1904,11 @@ button {
   border: 0;
   border-radius: 999px;
   background: var(--border-soft);
+  transition: width 280ms ease, background-color 280ms ease, transform 180ms ease;
+}
+
+.carousel-pill:hover {
+  transform: scale(1.2);
 }
 
 .carousel-pill.active {
@@ -2064,7 +2132,7 @@ button {
 }
 
 .listing-ai-reason {
-  margin: 12px 0 0;
+  margin: 12px 0 18px;
   color: var(--muted);
   line-height: 1.5;
   font-size: 0.85rem;
@@ -2337,6 +2405,57 @@ button {
   flex-shrink: 0;
 }
 
+.job-modal-header-actions,
+.job-modal-navigation {
+  display: flex;
+  align-items: center;
+}
+
+.job-modal-header-actions {
+  gap: 10px;
+}
+
+.job-modal-navigation {
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border-soft);
+  border-radius: 12px;
+  background: var(--panel-soft);
+}
+
+.job-modal-navigation span {
+  min-width: 46px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.job-nav-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  color: var(--accent-text);
+  background: transparent;
+  transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.job-nav-button:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--violet-soft);
+  transform: translateY(-1px);
+}
+
+.job-nav-button:disabled {
+  cursor: default;
+  color: var(--muted);
+  opacity: 0.35;
+}
+
 .job-modal-meta {
   display: grid;
   gap: 8px;
@@ -2360,6 +2479,14 @@ button {
   transform-origin: center;
 }
 
+.job-modal-overlay .job-modal.job-nav-next {
+  animation: job-modal-slide-next 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.job-modal-overlay .job-modal.job-nav-previous {
+  animation: job-modal-slide-previous 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 .job-modal-overlay.closing .job-modal {
   animation: job-modal-out 220ms ease both;
 }
@@ -2375,6 +2502,10 @@ button {
   height: auto;
   max-height: min(84vh, 720px);
   border-radius: 24px;
+}
+
+.profile-overlay.auth-overlay > .auth-panel {
+  animation: auth-panel-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .auth-switch-row {
@@ -2483,6 +2614,28 @@ button {
   }
 }
 
+@keyframes profile-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes auth-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @keyframes job-modal-in {
   from {
     opacity: 0;
@@ -2545,6 +2698,20 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+
+  .content-appear {
+    animation: none;
+  }
+
+  .announcement-track,
+  .carousel-pill {
+    transition: none;
+  }
+
   .ai-studio-card::before,
   .applications-tabs::before,
   .profile-tab-row::before,
@@ -2561,7 +2728,10 @@ button {
   .job-modal-overlay,
   .job-modal-overlay.closing,
   .job-modal-overlay .job-modal,
-  .job-modal-overlay.closing .job-modal {
+  .job-modal-overlay.closing .job-modal,
+  .profile-overlay:not(.job-modal-overlay),
+  .profile-overlay:not(.job-modal-overlay) > .profile-panel,
+  .profile-overlay.auth-overlay > .auth-panel {
     animation: none;
   }
 }
@@ -2651,6 +2821,15 @@ button {
 
   .job-modal-overlay {
     padding: 12px;
+  }
+
+  .job-modal .profile-panel-header {
+    flex-direction: column;
+  }
+
+  .job-modal-header-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .category-bar::before {
@@ -3014,6 +3193,28 @@ button {
 .profile-subscription-button:hover {
   filter: brightness(1.05);
   transform: translateY(-1px);
+}
+
+@keyframes job-modal-slide-next {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes job-modal-slide-previous {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 .theme-light .subscription-renewal-alert {
