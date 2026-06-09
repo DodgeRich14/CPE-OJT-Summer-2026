@@ -133,6 +133,8 @@ function buildLocalResumeFallback(payload) {
       keywords: skills,
       sourceFileName: payload?.fileName || "resume",
       usedFallback: true,
+      parserEngine: "local-fallback",
+      parserError: "The live Gemini resume parser was unavailable, so local resume analysis was used instead.",
     },
   };
 }

@@ -2,7 +2,7 @@
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version, x-supabase-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -424,7 +424,11 @@ Rules:
     } catch (_error) {
       return jsonResponse({
         success: true,
-        parsedProfile: fallbackProfile,
+        parsedProfile: {
+          ...fallbackProfile,
+          parserError: _error instanceof Error ? _error.message : "Gemini parsing failed.",
+          parserEngine: "local-fallback",
+        },
       });
     }
   } catch (error) {

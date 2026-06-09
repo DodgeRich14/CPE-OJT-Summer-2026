@@ -5265,9 +5265,14 @@ function App() {
                     <div className="resume-ai-card">
                       <div className="profile-inline-heading">
                         <strong>AI Resume Summary</strong>
-                        <span className="status-badge ready">Gemini</span>
+                        <span className={`status-badge ${state.profile.aiProfile.usedFallback ? "reviewed" : "ready"}`}>
+                          {state.profile.aiProfile.usedFallback ? "Local Fallback" : "Gemini"}
+                        </span>
                       </div>
                       <p>{state.profile.aiProfile.summary}</p>
+                      {state.profile.aiProfile.usedFallback && state.profile.aiProfile.parserError && (
+                        <p className="ai-empty-note">{state.profile.aiProfile.parserError}</p>
+                      )}
                       <div className="progress-tags">
                         {(state.profile.aiProfile.suggested_roles ?? []).slice(0, 3).map((role) => (
                           <span key={role}>{role}</span>
