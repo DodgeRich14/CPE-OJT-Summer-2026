@@ -843,6 +843,23 @@ button {
   border-top: 1px solid rgba(92, 101, 144, 0.14);
 }
 
+.roadmap-phase-appear {
+  transform-origin: top center;
+  animation: roadmap-phase-appear 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes roadmap-phase-appear {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scaleY(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scaleY(1);
+  }
+}
+
 .roadmap-section-block {
   margin-top: 14px;
 }
@@ -1049,6 +1066,224 @@ button {
   width: 100%;
 }
 
+.mentorship-section,
+.certifications-section {
+  min-width: 0;
+}
+
+.mentorship-section .applications-head,
+.certifications-section .applications-head {
+  margin-bottom: 20px;
+}
+
+.mentorship-section .applications-head > div,
+.certifications-section .applications-head > div,
+.mentor-card,
+.cert-card,
+.mentor-body,
+.mentor-head > *,
+.mentor-head .application-copy {
+  min-width: 0;
+}
+
+.mentorship-section .roadmap-meta,
+.certifications-section .roadmap-meta {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+.mentorship-section .roadmap-meta span,
+.certifications-section .roadmap-meta span,
+.mentor-card h3,
+.mentor-card p,
+.mentor-card span,
+.cert-card h3,
+.cert-card p,
+.cert-card span {
+  overflow-wrap: anywhere;
+}
+
+.mentor-card,
+.cert-card {
+  overflow: hidden;
+}
+
+.cert-card {
+  display: grid;
+  gap: 14px;
+}
+
+.cert-card .mentor-description,
+.cert-card .progress-tags,
+.cert-card .cert-actions {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.certifications-section .applications-head p,
+.certifications-section .roadmap-meta,
+.cert-card p {
+  text-align: left;
+}
+
+.cert-card .mentor-head {
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.cert-card .application-copy {
+  gap: 3px;
+}
+
+.cert-card .application-copy .mentor-badges {
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+.cert-card .application-copy h3 {
+  margin: 0;
+  font-size: 1.14rem;
+  line-height: 1.3;
+}
+
+.cert-card .application-copy p {
+  margin: 2px 0 0;
+  line-height: 1.45;
+}
+
+.cert-card .mentor-description {
+  line-height: 1.6;
+}
+
+.cert-card .progress-tags {
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.cert-card .progress-tags span {
+  line-height: 1.3;
+}
+
+.cert-card .cert-relevance {
+  line-height: 1.3;
+}
+
+.mentor-card .application-copy,
+.cert-card .application-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.mentor-card .application-copy p,
+.cert-card .application-copy p {
+  margin: 0;
+}
+
+.mentor-body {
+  display: grid;
+  gap: 16px;
+}
+
+.mentor-body .mentor-badges-price,
+.mentor-body .progress-title,
+.mentor-body .mentor-description,
+.mentor-body .progress-tags,
+.mentor-body .mentor-info-grid,
+.mentor-body .mentor-enrolled-row,
+.mentor-body .mentor-progress-bar,
+.mentor-body .roadmap-cta {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.mentor-badges-price {
+  flex-wrap: wrap;
+}
+
+.mentor-badges-price strong {
+  flex-shrink: 0;
+}
+
+.mentor-info-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 18px;
+}
+
+.certifications-section .progress-card-list,
+.mentorship-section .progress-card-list {
+  gap: 20px;
+}
+
+.certifications-section .cert-provider {
+  width: 58px;
+  min-width: 58px;
+  height: auto;
+  min-height: 48px;
+  padding: 7px;
+  line-height: 1.15;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.certifications-section .cert-relevance {
+  min-width: 78px;
+}
+
+.cert-filter-chip {
+  min-width: 0;
+  padding-inline: 8px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.cert-actions {
+  align-items: stretch;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.cert-actions .ghost-action,
+.cert-actions .cert-cta {
+  width: 100%;
+  min-height: 48px;
+  margin: 0;
+  padding: 12px 14px;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+}
+
+.certification-list-appear {
+  animation: certification-list-appear 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.certification-list-appear .cert-card {
+  animation: certification-card-appear 440ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--cert-card-index, 0) * 45ms);
+}
+
+@keyframes certification-list-appear {
+  from {
+    opacity: 0.35;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes certification-card-appear {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 .profile-overlay {
   position: fixed;
   inset: 0;
@@ -1141,7 +1376,7 @@ button {
 .profile-tab-row {
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--profile-tab-count, 3), minmax(0, 1fr));
   gap: 6px;
   position: relative;
   margin: 16px 18px;
@@ -2345,6 +2580,56 @@ button {
   background: rgba(196, 90, 120, 0.12);
 }
 
+.theme-light .premium-lock {
+  color: #755400;
+  background: #fff3bf;
+  border-color: rgba(117, 84, 0, 0.32);
+}
+
+.theme-light .status-badge {
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.theme-light .status-badge.interview,
+.theme-light .status-badge.in-progress {
+  color: #4d48bd;
+  background: rgba(88, 84, 216, 0.12);
+  border-color: rgba(88, 84, 216, 0.22);
+}
+
+.theme-light .status-badge.reviewed {
+  color: #795900;
+  background: rgba(241, 193, 90, 0.2);
+  border-color: rgba(121, 89, 0, 0.22);
+}
+
+.theme-light .status-badge.applied {
+  color: #08748c;
+  background: rgba(8, 116, 140, 0.1);
+  border-color: rgba(8, 116, 140, 0.22);
+}
+
+.theme-light .status-badge.shortlisted,
+.theme-light .status-badge.completed,
+.theme-light .status-badge.ready {
+  color: #087557;
+  background: rgba(15, 157, 121, 0.12);
+  border-color: rgba(8, 117, 87, 0.22);
+}
+
+.theme-light .status-badge.saved {
+  color: #4f5975;
+  background: rgba(79, 89, 117, 0.1);
+  border-color: rgba(79, 89, 117, 0.2);
+}
+
+.theme-light .apply-action.applied {
+  color: #087557;
+  border-color: rgba(8, 117, 87, 0.24);
+  background: rgba(15, 157, 121, 0.1);
+}
+
 .theme-light .profile-overlay {
   background: rgba(26, 34, 51, 0.34);
 }
@@ -2707,6 +2992,12 @@ button {
     animation: none;
   }
 
+  .roadmap-phase-appear,
+  .certification-list-appear,
+  .certification-list-appear .cert-card {
+    animation: none;
+  }
+
   .announcement-track,
   .carousel-pill {
     transition: none;
@@ -2757,6 +3048,21 @@ button {
 }
 
 @media (max-width: 720px) {
+  .mentor-rating,
+  .certifications-section .cert-relevance {
+    width: 100%;
+    text-align: left;
+  }
+
+  .mentor-enrolled-row {
+    flex-wrap: wrap;
+  }
+
+  .certifications-section .cert-provider {
+    width: auto;
+    max-width: 100%;
+  }
+
   .announcement-card,
   .listing-top,
   .category-bar,
@@ -3412,5 +3718,137 @@ button {
 .sidebar-link span:not(.premium-lock),
 .light-toggle span {
   min-width: 0;
+}
+
+/* Admin layout: allow long navigation labels and give management sections room to breathe. */
+.role-admin .sidebar-nav {
+  gap: 8px;
+}
+
+.role-admin .sidebar-nav::before {
+  display: none;
+}
+
+.role-admin .sidebar-link {
+  height: auto;
+  min-height: 48px;
+  align-items: flex-start;
+  padding: 11px 12px;
+  overflow: visible;
+}
+
+.role-admin .sidebar-link.active {
+  background: rgba(112, 103, 255, 0.18);
+}
+
+.role-admin .sidebar-link svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+}
+
+.role-admin .sidebar-link span {
+  min-width: 0;
+  font-size: 0.88rem;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+.role-admin .applications-section {
+  min-width: 0;
+  display: grid;
+  gap: 28px;
+}
+
+.role-admin .admin-page-hero,
+.role-admin .summary-grid,
+.role-admin .listing-caption {
+  margin: 0;
+}
+
+.role-admin .admin-page-hero > div:last-child,
+.role-admin .application-copy,
+.role-admin .profile-mini-card > div {
+  min-width: 0;
+}
+
+.role-admin .admin-page-hero h1,
+.role-admin .admin-page-hero p,
+.role-admin .application-copy h3,
+.role-admin .application-copy p,
+.role-admin .application-copy span,
+.role-admin .summary-card strong,
+.role-admin .summary-card span,
+.role-admin .profile-mini-card strong,
+.role-admin .profile-mini-card p,
+.role-admin .cert-provider {
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.role-admin .progress-card-list {
+  gap: 20px;
+}
+
+.role-admin .progress-card,
+.role-admin .summary-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: clamp(24px, 3vw, 30px);
+}
+
+.role-admin .progress-card > .application-top {
+  min-width: 0;
+  padding: 0 0 22px;
+}
+
+.role-admin .progress-card > .application-actions {
+  margin-top: 2px;
+}
+
+.role-admin .cert-provider {
+  width: 52px;
+  min-width: 52px;
+  height: auto;
+  min-height: 52px;
+  padding: 8px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.role-admin .certificate-proof-block {
+  min-width: 0;
+  margin: 0 0 22px;
+}
+
+.role-admin .certificate-proof-block a {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.role-admin .admin-two-column {
+  gap: 24px;
+}
+
+.role-admin .admin-source-row .application-subrow,
+.role-admin .profile-mini-card {
+  min-width: 0;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .role-admin .applications-section {
+    gap: 22px;
+  }
+
+  .role-admin .progress-card,
+  .role-admin .summary-card {
+    padding: 20px;
+  }
+
+  .role-admin .progress-card > .application-top {
+    padding-bottom: 18px;
+  }
 }
 

@@ -57,7 +57,7 @@ const adminSidebarItems = [
   { id: "employers", label: "Employer Verification", icon: BriefcaseBusiness },
   { id: "analytics", label: "Analytics", icon: LineChart },
   { id: "revenue", label: "Revenue Management", icon: DollarSign },
-  { id: "cms", label: "CMS / Content Management", icon: FileText },
+  { id: "cms", label: "Content Management", icon: FileText },
 ];
 
 const accentSequence = ["violet", "mint", "violet", "mint", "violet"];
@@ -4398,7 +4398,7 @@ function App() {
                     </div>
 
                     {item.expanded && (
-                      <div className="roadmap-body">
+                      <div className="roadmap-body roadmap-phase-appear">
                         <div className="roadmap-section-block">
                           <p>Skills</p>
                           <div className="progress-tags">
@@ -4564,13 +4564,13 @@ function App() {
               ))}
             </div>
 
-            <div className="progress-card-list">
-              {filteredCertifications.map((cert) => {
+            <div key={state.certificationFilter} className="progress-card-list certification-list-appear">
+              {filteredCertifications.map((cert, index) => {
                 const practiced = state.certificationPractice.includes(cert.id);
                 const portalVisited = state.certificationPortalVisits.includes(cert.id);
 
                 return (
-                  <article key={cert.id} className="cert-card">
+                  <article key={cert.id} className="cert-card" style={{ "--cert-card-index": index }}>
                     <div className="mentor-head">
                       <div className="cert-provider">{cert.provider}</div>
                       <div className="application-copy">
