@@ -3,7 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-api-version, x-supabase-client-info",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: false, error: "Email, password, and full name are required." });
     }
 
-    const normalizedRole = ["Applicant", "Employer", "Admin"].includes(role) ? role : "Applicant";
+  const normalizedRole = ["Applicant", "Student", "Employer", "Admin"].includes(role) ? role : "Applicant";
     const normalizedEmail = String(email).trim().toLowerCase();
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");

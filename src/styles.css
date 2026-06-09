@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;900&family=Inter:wght@300;400;500;600;700;900&family=DM+Mono:wght@400;500&display=swap");
 
 :root {
   color-scheme: dark;
@@ -39,6 +39,12 @@
   --section-padding: clamp(24px, 3vw, 30px);
   --card-padding: clamp(22px, 2.5vw, 26px);
   --compact-padding: 18px;
+  --page-glow-1: rgba(112, 103, 255, 0.22);
+  --page-glow-2: rgba(18, 217, 162, 0.14);
+  --page-glow-3: rgba(255, 92, 130, 0.08);
+  --surface-shadow: 0 24px 60px rgba(4, 8, 14, 0.22);
+  --surface-shadow-soft: 0 16px 36px rgba(4, 8, 14, 0.14);
+  --surface-shadow-hover: 0 28px 72px rgba(4, 8, 14, 0.28);
 }
 
 .theme-light {
@@ -74,6 +80,12 @@
   --input-bg: #f3f6fc;
   --track: rgba(92, 101, 144, 0.12);
   --inset-shadow: rgba(255, 255, 255, 0.92);
+  --page-glow-1: rgba(98, 95, 224, 0.16);
+  --page-glow-2: rgba(15, 157, 121, 0.12);
+  --page-glow-3: rgba(196, 90, 120, 0.06);
+  --surface-shadow: 0 24px 60px rgba(26, 34, 51, 0.12);
+  --surface-shadow-soft: 0 16px 34px rgba(26, 34, 51, 0.08);
+  --surface-shadow-hover: 0 28px 72px rgba(26, 34, 51, 0.16);
 }
 
 * {
@@ -86,6 +98,10 @@ body,
   min-height: 100%;
 }
 
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   font-family: "Inter", sans-serif;
@@ -93,6 +109,8 @@ body {
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 p {
@@ -125,7 +143,29 @@ h1,
 h2,
 h3,
 strong {
-  font-weight: 400;
+  font-weight: 500;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Playfair Display", serif;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+}
+
+small,
+.section-label,
+.listing-caption,
+.category-chip strong,
+.applications-tab strong,
+.profile-label,
+.profile-field > span,
+.profile-list-block > span,
+.announcement-pills span,
+.sidebar-profile span {
+  font-family: "DM Mono", monospace;
+  letter-spacing: 0.04em;
 }
 
 button,
@@ -137,11 +177,68 @@ button {
   cursor: pointer;
 }
 
+button,
+input,
+textarea,
+select,
+.sidebar-link,
+.light-toggle,
+.applications-tab,
+.profile-tab,
+.category-chip,
+.ghost-action,
+.auth-role-button,
+.add-button,
+.auth-entry-button {
+  transition:
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    color 180ms ease,
+    opacity 180ms ease;
+}
+
+button:hover,
+.sidebar-link:hover,
+.light-toggle:hover,
+.applications-tab:hover,
+.profile-tab:hover,
+.category-chip:hover,
+.ghost-action:hover,
+.auth-role-button:hover,
+.add-button:hover,
+.auth-entry-button:hover {
+  transform: translateY(-1px);
+}
+
+button:active,
+.sidebar-link:active,
+.light-toggle:active,
+.applications-tab:active,
+.profile-tab:active,
+.category-chip:active,
+.ghost-action:active,
+.auth-role-button:active,
+.add-button:active,
+.auth-entry-button:active {
+  transform: translateY(0) scale(0.99);
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(112, 103, 255, 0.18), 0 0 0 1px var(--accent-strong);
+}
+
 .dashboard-shell {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
+  isolation: isolate;
 }
 
 .dashboard-sidebar {
@@ -156,11 +253,12 @@ button {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  height: 100vh;
+  height: 100dvh;
   overflow: auto;
   padding: 22px 16px 18px;
   background: var(--sidebar);
   border-right: 1px solid rgba(92, 101, 144, 0.2);
+  box-shadow: var(--surface-shadow-soft);
 }
 
 .sidebar-brand {
@@ -304,6 +402,8 @@ button {
 
 .admin-page-hero h1 {
   margin: 0;
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .admin-page-hero p {
@@ -441,7 +541,6 @@ button {
 
 .applications-head h1 {
   margin: 0;
-  font-family: "Inter", sans-serif;
   font-size: 2rem;
   line-height: 1.1;
   letter-spacing: 0;
@@ -533,6 +632,7 @@ button {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 20px;
+  box-shadow: var(--surface-shadow-soft);
 }
 
 .summary-card {
@@ -549,6 +649,12 @@ button {
 
 .summary-card span {
   color: var(--muted);
+}
+
+.summary-card:hover,
+.application-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--surface-shadow-hover);
 }
 
 .violet-text {
@@ -590,6 +696,12 @@ button {
   border: 1px solid var(--border);
   border-radius: 20px;
   padding: var(--card-padding);
+  box-shadow: var(--surface-shadow-soft);
+}
+
+.progress-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--surface-shadow-hover);
 }
 
 .progress-card.completed,
@@ -796,11 +908,17 @@ button {
   border: 1px solid var(--border);
   border-radius: 20px;
   overflow: hidden;
+  box-shadow: var(--surface-shadow-soft);
 }
 
 .roadmap-card.done,
 .roadmap-card.active {
   border-color: rgba(17, 216, 161, 0.28);
+}
+
+.roadmap-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--surface-shadow-hover);
 }
 
 .roadmap-card-top {
@@ -836,6 +954,8 @@ button {
 .roadmap-card h3 {
   margin: 0;
   font-size: 1.14rem;
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .roadmap-body {
@@ -1103,9 +1223,22 @@ button {
   overflow-wrap: anywhere;
 }
 
+.mentor-card h3,
+.cert-card h3 {
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
+}
+
 .mentor-card,
 .cert-card {
   overflow: hidden;
+  box-shadow: var(--surface-shadow-soft);
+}
+
+.mentor-card:hover,
+.cert-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--surface-shadow-hover);
 }
 
 .cert-card {
@@ -1306,7 +1439,7 @@ button {
   color: var(--text);
   background: var(--panel);
   border-left: 1px solid rgba(92, 101, 144, 0.24);
-  box-shadow: -20px 0 50px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--surface-shadow);
 }
 
 .profile-overlay:not(.job-modal-overlay) > .profile-panel {
@@ -1843,6 +1976,8 @@ button {
   margin: 0;
   font-size: 1.24rem;
   line-height: 1.2;
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .application-copy p,
@@ -2036,6 +2171,7 @@ button {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 20px;
+  box-shadow: var(--surface-shadow-soft);
 }
 
 .announcement-card {
@@ -2045,6 +2181,12 @@ button {
   grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 18px;
   padding: var(--card-padding);
+}
+
+.announcement-card:hover,
+.listing-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--surface-shadow-hover);
 }
 
 .announcement-viewport {
@@ -2207,6 +2349,8 @@ button {
 .ai-studio-head h3 {
   margin: 0;
   font-size: 1.08rem;
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .ai-studio-head p {
@@ -2672,6 +2816,7 @@ button {
   width: min(100%, 760px);
   max-height: min(88vh, 920px);
   border-radius: 24px;
+  box-shadow: var(--surface-shadow);
 }
 
 .job-modal-summary {
@@ -3258,6 +3403,8 @@ button {
 .premium-lock-card h1 {
   margin: 10px 0;
   font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .premium-lock-card p {
@@ -3310,6 +3457,8 @@ button {
   color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.2;
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .sidebar-subscription-card p {
@@ -3350,6 +3499,8 @@ button {
 .subscription-hero-card h1 {
   margin: 10px 0;
   font-size: clamp(2rem, 5vw, 3.2rem);
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .subscription-hero-card > p {
@@ -3381,6 +3532,8 @@ button {
 .subscription-plan-card h2 {
   margin: 8px 0;
   font-size: 2rem;
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .subscription-plan-card p {
@@ -3451,6 +3604,8 @@ button {
   margin: 0 0 6px;
   color: var(--text-primary);
   font-size: 1.15rem;
+  font-family: "Playfair Display", serif;
+  font-weight: 600;
 }
 
 .profile-subscription-card p {

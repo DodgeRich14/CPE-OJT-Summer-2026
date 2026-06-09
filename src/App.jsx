@@ -127,6 +127,13 @@ function normalizeCategoryForState(category) {
   return "jobs";
 }
 
+function mapStateCategoryToDbCategory(category) {
+  if (category === "internships") return "Internship";
+  if (category === "volunteer") return "Volunteer";
+  if (category === "jobs") return "Job";
+  return null;
+}
+
 function formatRelativeDate(value) {
   if (!value) return "recently";
 
@@ -1176,6 +1183,15 @@ function createBaseUserProfile(role) {
     };
   }
 
+  if (role === "Student") {
+    return {
+      ...guestProfile,
+      role: "Student",
+      jobTitle: "Student / OJT Candidate",
+      about: "Student account focused on internships, OJT opportunities, and volunteer experience that supports career growth.",
+    };
+  }
+
   return {
     ...guestProfile,
     role: "Applicant",
@@ -1417,6 +1433,7 @@ function App() {
   const [closingJobModal, setClosingJobModal] = useState(false);
   const [jobNavigationDirection, setJobNavigationDirection] = useState(null);
   const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
+  const isStudent = state.auth.isAuthenticated && state.auth.accountRole === "Student";
   const hasActiveSubscription = state.auth.isAuthenticated && state.subscription?.status === "active";
   const renewalDate = state.subscription?.renewalDate ? new Date(state.subscription.renewalDate) : null;
   const daysBeforeRenewal = renewalDate && !Number.isNaN(renewalDate.getTime())
@@ -1522,6 +1539,28 @@ function App() {
       }
 
       const mappedProfile = mapProfileRecordToState(profileRecord, session.user);
+
+      if (!profileRecord && hasSupabaseConfig && supabase) {
+        const fallbackProfile = {
+          ...createBaseUserProfile(mappedProfile.role),
+          ...mappedProfile,
+          email: session.user.email || mappedProfile.email,
+          role: mappedProfile.role,
+        };
+
+        supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: session.user.id,
+              ...createProfileUpdatePayload(fallbackProfile),
+              status: "Active",
+            },
+            { onConflict: "id" },
+          )
+          .catch(() => {});
+      }
+
       let subscriptionState = {
         status: "free",
         plan: "Free",
@@ -1784,6 +1823,11 @@ function App() {
     [state.aiRecommendations],
   );
 
+  const visibleCategories = useMemo(
+    () => (isStudent ? categories.filter((category) => category.id !== "jobs") : categories),
+    [isStudent],
+  );
+
   const listings = useMemo(
     () => {
       const remoteListings = state.liveJobs.map((job, index) => {
@@ -1877,8 +1921,11 @@ function App() {
       state.profile.location,
       state.profile.skills.join("|"),
       state.liveJobs.length,
+      isStudent ? state.activeCategory : "all-categories",
     ].join("::");
   }, [
+    isStudent,
+    state.activeCategory,
     state.liveJobs.length,
     state.profile.aiProfile,
     state.profile.jobTitle,
@@ -1892,7 +1939,7 @@ function App() {
     if (!hasSupabaseConfig) return;
     if (!state.profile.aiProfile) return;
     if (state.liveJobs.length === 0) return;
-    if (state.aiRecommendations.length > 0) return;
+    if (!isStudent && state.aiRecommendations.length > 0) return;
     if (state.aiStatus.refreshingRecommendations || state.aiStatus.analyzingResume) return;
     if (state.aiStatus.lastAutoRecommendationKey === autoRecommendationKey) return;
 
@@ -1904,10 +1951,21 @@ function App() {
     state.aiStatus.lastAutoRecommendationKey,
     state.aiStatus.analyzingResume,
     state.aiStatus.refreshingRecommendations,
+    isStudent,
     state.liveJobs.length,
     state.profile,
     autoRecommendationKey,
   ]);
+
+  useEffect(() => {
+    if (!isStudent) return;
+    if (state.activeCategory === "internships" || state.activeCategory === "volunteer") return;
+
+    setState((current) => ({
+      ...current,
+      activeCategory: "internships",
+    }));
+  }, [isStudent, state.activeCategory]);
 
   useEffect(() => {
     const listingIds = new Set(listings.map((listing) => String(listing.id)));
@@ -1940,11 +1998,11 @@ function App() {
 
   const counts = useMemo(
     () =>
-      categories.map((category) => ({
+      visibleCategories.map((category) => ({
         ...category,
         count: rankedListings.filter((listing) => listing.category === category.id).length,
       })),
-    [rankedListings],
+    [rankedListings, visibleCategories],
   );
   const categoryActiveIndex = Math.max(
     counts.findIndex((item) => item.id === state.activeCategory),
@@ -2245,6 +2303,11 @@ function App() {
     }));
 
     try {
+      const recommendationCategory =
+        (options.roleOverride ?? profile.role) === "Student"
+          ? mapStateCategoryToDbCategory(options.categoryOverride ?? state.activeCategory)
+          : null;
+
       const response = await fetchRecommendedJobs({
         profile: {
           fullName: profile.fullName,
@@ -2254,6 +2317,7 @@ function App() {
           skills: profile.skills,
         },
         resumeProfile: aiProfile ?? {},
+        category: recommendationCategory,
       });
 
       setState((current) => ({
@@ -3062,6 +3126,43 @@ function App() {
             setAuthFeedback("This account has been suspended. Please contact support or an administrator for assistance.");
             return;
           }
+
+          const loggedInRole = profileRecord?.role || data.user?.user_metadata?.role || "Applicant";
+          const loggedInProfile = mapProfileRecordToState(
+            profileRecord || {
+              role: loggedInRole,
+              full_name: data.user?.user_metadata?.full_name || authForm.email.trim().split("@")[0],
+              first_name: data.user?.user_metadata?.first_name || "",
+              last_name: data.user?.user_metadata?.last_name || "",
+              email: authForm.email.trim(),
+              username: `@${(data.user?.user_metadata?.full_name || authForm.email.trim().split("@")[0])
+                .toLowerCase()
+                .replace(/\s+/g, ".")}`,
+            },
+            data.user,
+          );
+
+          setState((current) => ({
+            ...current,
+            authModalOpen: false,
+            authMode: "login",
+            activeSidebar:
+              loggedInRole === "Admin"
+                ? "analytics"
+                : current.activeSidebar === "analytics"
+                  ? "discover"
+                  : current.activeSidebar,
+            auth: {
+              ...current.auth,
+              isAuthenticated: true,
+              accountId: userId,
+              accountName: loggedInProfile.fullName,
+              accountEmail: loggedInProfile.email,
+              accountRole: loggedInProfile.role,
+              password: "",
+            },
+            profile: loggedInProfile,
+          }));
         }
 
         setAuthFeedback("");
@@ -3084,35 +3185,69 @@ function App() {
     const role = authForm.role || "Applicant";
 
     if (hasSupabaseConfig && supabase) {
-      const { data, error } = await supabase.functions.invoke("register-user", {
-        body: {
-          email: authForm.email.trim(),
-          password: authForm.password,
-          fullName,
-          firstName,
-          lastName,
-          role,
-        },
-      });
+      const email = authForm.email.trim().toLowerCase();
+      let createdUserId = "";
 
-      if (error) {
-        setAuthFeedback(error.message || "Unable to create your account.");
+      try {
+        const { data, error } = await supabase.functions.invoke("register-user", {
+          body: {
+            email,
+            password: authForm.password,
+            fullName,
+            firstName,
+            lastName,
+            role,
+          },
+        });
+
+        if (error) {
+          setAuthFeedback(error.message || "Unable to create your account.");
+          return;
+        } else if (data?.error) {
+          setAuthFeedback(data.error || "Unable to create your account.");
+          return;
+        } else {
+          createdUserId = data?.user?.id ?? "";
+        }
+      } catch {
+        setAuthFeedback("Unable to create your account.");
         return;
       }
 
-      if (data?.error) {
-        setAuthFeedback(data.error || "Unable to create your account.");
-        return;
-      }
-
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: authForm.email.trim(),
+      const { data: sessionData, error: signInError } = await supabase.auth.signInWithPassword({
+        email,
         password: authForm.password,
       });
 
       if (signInError) {
         setAuthFeedback(signInError.message || "Account created, but automatic login failed.");
         return;
+      }
+
+      const userId = sessionData.session?.user?.id ?? createdUserId;
+
+      if (userId) {
+        const nextProfile = {
+          ...createBaseUserProfile(role),
+          fullName,
+          username,
+          email,
+          firstName,
+          lastName,
+          role,
+        };
+
+        supabase
+          .from("profiles")
+          .upsert(
+            {
+              id: userId,
+              ...createProfileUpdatePayload(nextProfile),
+              status: "Active",
+            },
+            { onConflict: "id" },
+          )
+          .catch(() => {});
       }
 
       setAuthFeedback("");
@@ -5292,7 +5427,7 @@ function App() {
                     <div className="profile-field full">
                       <span>User Role</span>
                       <div className="auth-role-row">
-                        {["Applicant", "Employer", "Admin"].map((role) => (
+                        {["Applicant", "Student", "Employer", "Admin"].map((role) => (
                           <button
                             key={role}
                             className={`auth-role-button${authForm.role === role ? " active" : ""}`}
