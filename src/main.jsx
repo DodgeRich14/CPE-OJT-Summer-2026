@@ -22,10 +22,10 @@ class RootErrorBoundary extends React.Component {
             padding: "32px",
             color: "#f5f6ff",
             background: "#090d15",
-            fontFamily: '"DM Mono", monospace',
+            fontFamily: '"Inter", sans-serif',
           }}
         >
-          <h1 style={{ marginTop: 0, fontFamily: '"Playfair Display", serif', fontWeight: 400 }}>
+          <h1 style={{ marginTop: 0, fontFamily: '"Inter", sans-serif', fontWeight: 400 }}>
             App Error
           </h1>
           <p style={{ lineHeight: 1.6 }}>

@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;900&family=Inter:wght@300;400;500;600;700;900&family=DM+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap");
 
 :root {
   color-scheme: dark;
@@ -149,7 +149,7 @@ strong {
 h1,
 h2,
 h3 {
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   letter-spacing: -0.02em;
   line-height: 1.08;
 }
@@ -164,7 +164,7 @@ small,
 .profile-list-block > span,
 .announcement-pills span,
 .sidebar-profile span {
-  font-family: "DM Mono", monospace;
+  font-family: "Inter", sans-serif;
   letter-spacing: 0.04em;
 }
 
@@ -402,7 +402,7 @@ select:focus-visible {
 
 .admin-page-hero h1 {
   margin: 0;
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -954,7 +954,7 @@ select:focus-visible {
 .roadmap-card h3 {
   margin: 0;
   font-size: 1.14rem;
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -1225,7 +1225,7 @@ select:focus-visible {
 
 .mentor-card h3,
 .cert-card h3 {
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -1976,7 +1976,7 @@ select:focus-visible {
   margin: 0;
   font-size: 1.24rem;
   line-height: 1.2;
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -2349,7 +2349,7 @@ select:focus-visible {
 .ai-studio-head h3 {
   margin: 0;
   font-size: 1.08rem;
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -3403,7 +3403,7 @@ select:focus-visible {
 .premium-lock-card h1 {
   margin: 10px 0;
   font-size: clamp(1.8rem, 4vw, 2.6rem);
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -3457,7 +3457,7 @@ select:focus-visible {
   color: var(--text-primary);
   font-size: 0.9rem;
   line-height: 1.2;
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -3499,7 +3499,7 @@ select:focus-visible {
 .subscription-hero-card h1 {
   margin: 10px 0;
   font-size: clamp(2rem, 5vw, 3.2rem);
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -3532,7 +3532,7 @@ select:focus-visible {
 .subscription-plan-card h2 {
   margin: 8px 0;
   font-size: 2rem;
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
@@ -3604,7 +3604,7 @@ select:focus-visible {
   margin: 0 0 6px;
   color: var(--text-primary);
   font-size: 1.15rem;
-  font-family: "Playfair Display", serif;
+  font-family: "Inter", sans-serif;
   font-weight: 600;
 }
 
