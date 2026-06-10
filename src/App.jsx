@@ -570,6 +570,57 @@ function getScoreToneClass(score) {
   return "score-red";
 }
 
+const matchScoreFactors = [
+  { key: "job_title_match", label: "Job title fit", weight: 35 },
+  { key: "skill_match", label: "Skill match", weight: 30 },
+  { key: "description_similarity", label: "Description fit", weight: 20 },
+  { key: "location_match", label: "Location fit", weight: 10 },
+  { key: "freshness", label: "Posting freshness", weight: 5 },
+];
+
+function MatchScore({ listing }) {
+  const breakdown = listing.scoreBreakdown;
+
+  return (
+    <div className="match-score-wrap">
+      <div
+        className={`listing-score ${getScoreToneClass(listing.score)}`}
+        tabIndex="0"
+        aria-label={`${listing.score}% match. Focus or hover for score breakdown.`}
+      >
+        {listing.score}
+      </div>
+      <div className="match-score-tooltip" role="tooltip">
+        <div className="match-score-tooltip-heading">
+          <strong>{listing.score}% match</strong>
+          <span>{breakdown?.limitedByEvidence ? `Capped at ${breakdown.evidenceCeiling}% by available evidence` : "Weighted fit score"}</span>
+        </div>
+        <div className="match-score-formula">
+          {matchScoreFactors.map((factor) => {
+            const factorScore = breakdown?.[factor.key] ?? 0;
+            const contribution = Math.round((factorScore * factor.weight) / 100);
+
+            return (
+              <div key={factor.key} className="match-score-factor">
+                <span>{factor.label} ({factor.weight}%)</span>
+                <strong>{factorScore}% <small>+{contribution}</small></strong>
+              </div>
+            );
+          })}
+        </div>
+        <p>
+          Weighted total: <strong>{breakdown?.weightedTotal ?? listing.score}%</strong>
+          {breakdown?.limitedByEvidence ? `, then limited to ${breakdown.evidenceCeiling}% by the profile's available skills, domain, or experience evidence.` : "."}
+        </p>
+        <div className="match-score-evidence">
+          <span><strong>Matched:</strong> {listing.rawMatchedSkills?.join(", ") || "No direct skills yet"}</span>
+          <span><strong>Gaps:</strong> {listing.gaps?.join(", ") || "No identified gaps"}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function getSkillEvidenceCeiling(requiredCount, matchedCount, roleOverlapCount = 0, contextOverlapCount = 0) {
   if (matchedCount <= 0) {
     return clampScore(42 + Math.min(roleOverlapCount * 3, 8) + Math.min(contextOverlapCount, 2) * 2);
@@ -600,12 +651,28 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
   const serverScore = typeof recommendation?.match_score === "number" ? clampScore(recommendation.match_score, 0, 100) : null;
 
   if (serverScore !== null) {
+    const serverBreakdown = recommendation?.score_breakdown ?? {};
+    const weightedTotal = Math.round(
+      computeWeightedAverageScore(
+        matchScoreFactors.map((factor) => ({
+          score: serverBreakdown[factor.key] ?? 0,
+          weight: factor.weight / 100,
+        })),
+      ),
+    );
+
     return {
       matchedSkills,
       rawMatchedSkills,
       score: serverScore,
       fallbackScore: serverScore,
       judgeScore: serverScore,
+      scoreBreakdown: {
+        ...serverBreakdown,
+        weightedTotal,
+        evidenceCeiling: serverScore,
+        limitedByEvidence: serverScore < weightedTotal,
+      },
     };
   }
 
@@ -649,6 +716,16 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
     score: finalScore,
     fallbackScore: clampScore(fallbackScore),
     judgeScore: typeof recommendation?.match_score === "number" ? clampScore(recommendation.match_score, 0, 100) : null,
+    scoreBreakdown: {
+      job_title_match: titleMatchScore,
+      skill_match: skillAlignmentScore,
+      description_similarity: descriptionSimilarityScore,
+      location_match: locationMatchScore,
+      freshness: freshnessScore,
+      weightedTotal: clampScore(fallbackScore),
+      evidenceCeiling,
+      limitedByEvidence: evidenceCeiling < fallbackScore,
+    },
   };
 }
 
@@ -1304,6 +1381,25 @@ function isLegacyDemoState(savedState) {
   );
 }
 
+function loadSavedState() {
+  const saved = window.localStorage.getItem(STORAGE_KEY);
+  if (!saved) return defaultState;
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    if (isLegacyDemoState(parsed)) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      return defaultState;
+    }
+
+    return { ...defaultState, ...parsed };
+  } catch {
+    window.localStorage.removeItem(STORAGE_KEY);
+    return defaultState;
+  }
+}
+
 function mapProfileRecordToState(record, fallbackUser = null) {
   const role = record?.role || fallbackUser?.user_metadata?.role || "Applicant";
   const baseProfile = createBaseUserProfile(role);
@@ -1418,7 +1514,7 @@ function mapCertificateSubmissionRecord(record) {
 }
 
 function App() {
-  const [state, setState] = useState(defaultState);
+  const [state, setState] = useState(loadSavedState);
   const [searchQuery, setSearchQuery] = useState("");
   const [adminUserSearchQuery, setAdminUserSearchQuery] = useState("");
   const [activeAnnouncement, setActiveAnnouncement] = useState(0);
@@ -1467,24 +1563,6 @@ function App() {
       day: "numeric",
     });
   }
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-
-    try {
-      const parsed = JSON.parse(saved);
-
-      if (isLegacyDemoState(parsed)) {
-        window.localStorage.removeItem(STORAGE_KEY);
-        return;
-      }
-
-      setState((current) => ({ ...current, ...parsed }));
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
-  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -1891,6 +1969,7 @@ function App() {
           matchedSkills,
           gaps,
           rawMatchedSkills: similarity.rawMatchedSkills,
+          scoreBreakdown: similarity.scoreBreakdown,
         };
       });
     },
@@ -4165,7 +4244,7 @@ function App() {
                           <p>{listing.company}</p>
                           <span>{listing.meta}</span>
                         </div>
-                        <div className={`listing-score ${listing.scoreTone}`}>{listing.score}</div>
+                        <MatchScore listing={listing} />
                       </div>
 
                       <div className="listing-meta-row">
@@ -4282,7 +4361,7 @@ function App() {
                           <span>{card.appliedDate}</span>
                         </div>
                         <div className="application-side">
-                          <div className={`listing-score ${getScoreToneClass(card.score)}`}>{card.score}</div>
+                          <MatchScore listing={card} />
                           <button
                             className="expand-button"
                             type="button"
@@ -4359,7 +4438,7 @@ function App() {
                         <span>{card.posted}</span>
                       </div>
                       <div className="application-side">
-                        <div className={`listing-score ${getScoreToneClass(card.score)}`}>{card.score}</div>
+                        <MatchScore listing={card} />
                       </div>
                     </div>
                   </article>
@@ -5577,7 +5656,7 @@ function App() {
                     <span>Posted {selectedJob.posted}</span>
                     <span>{selectedJob.applicants} applicants</span>
                   </div>
-                  <div className={`listing-score ${getScoreToneClass(selectedJob.score)}`}>{selectedJob.score}</div>
+                  <MatchScore listing={selectedJob} />
                 </div>
 
                 {selectedJobRecommendation?.reason && <p className="listing-ai-reason modal-ai-reason">{selectedJobRecommendation.reason}</p>}
