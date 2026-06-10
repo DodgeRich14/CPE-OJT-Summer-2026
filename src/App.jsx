@@ -1381,6 +1381,51 @@ function isLegacyDemoState(savedState) {
   );
 }
 
+function buildPersistedProfile(profile) {
+  if (!profile) return defaultState.profile;
+
+  return {
+    ...profile,
+    resumeText: "",
+  };
+}
+
+function buildPersistedState(state) {
+  return {
+    theme: state.theme,
+    activeSidebar: state.activeSidebar,
+    activeCategory: state.activeCategory,
+    subscription: state.subscription,
+    applicationsTab: state.applicationsTab,
+    expandedApplicationId: state.expandedApplicationId,
+    progressTab: state.progressTab,
+    expandedRoadmapId: state.expandedRoadmapId,
+    profilePanelOpen: state.profilePanelOpen,
+    profilePanelTab: state.profilePanelTab,
+    selectedJobId: state.selectedJobId,
+    selectedAdminUserId: state.selectedAdminUserId,
+    selectedAdminCertificationId: state.selectedAdminCertificationId,
+    adminUserActionId: state.adminUserActionId,
+    authModalOpen: state.authModalOpen,
+    authMode: state.authMode,
+    mentorshipApplied: state.mentorshipApplied,
+    certificationFilter: state.certificationFilter,
+    certificationPractice: state.certificationPractice,
+    certificationPortalVisits: state.certificationPortalVisits,
+    profileSavedAt: state.profileSavedAt,
+    auth: {
+      ...state.auth,
+      password: "",
+    },
+    profile: buildPersistedProfile(state.profile),
+    applications: state.applications,
+    saved: state.saved,
+    profileExperience: state.profileExperience,
+    profileCertificates: state.profileCertificates,
+    volunteerActivities: state.volunteerActivities,
+  };
+}
+
 function loadSavedState() {
   const saved = window.localStorage.getItem(STORAGE_KEY);
   if (!saved) return defaultState;
@@ -1565,7 +1610,22 @@ function App() {
   }
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(buildPersistedState(state)));
+    } catch {
+      try {
+        const fallbackState = buildPersistedState({
+          ...state,
+          profile: {
+            ...buildPersistedProfile(state.profile),
+            aiProfile: null,
+          },
+        });
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(fallbackState));
+      } catch {
+        window.localStorage.removeItem(STORAGE_KEY);
+      }
+    }
   }, [state]);
 
   useEffect(() => {
