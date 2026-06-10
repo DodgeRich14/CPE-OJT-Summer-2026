@@ -9,6 +9,8 @@ const corsHeaders = {
 
 const GEMINI_EMBEDDING_MODEL = "models/gemini-embedding-001";
 const EMBEDDING_BATCH_SIZE = 24;
+// Keep Gemini usage bounded while still returning every job through weighted fallback scoring.
+const MAX_SEMANTIC_CANDIDATES = 80;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -885,10 +887,11 @@ Deno.serve(async (req) => {
       profile as Record<string, unknown>,
       resumeProfile as Record<string, unknown>,
     );
-    const jobEmbeddingTexts = candidateJobs.map((job) =>
+    const semanticCandidateJobs = candidateJobs.slice(0, MAX_SEMANTIC_CANDIDATES);
+    const jobEmbeddingTexts = semanticCandidateJobs.map((job) =>
       buildJobEmbeddingText(job as Record<string, unknown>, (job.required_skills ?? []) as string[]),
     );
-    const jobTitleTexts = candidateJobs.map((job) => trimEmbeddingText(String(job.title ?? "")));
+    const jobTitleTexts = semanticCandidateJobs.map((job) => trimEmbeddingText(String(job.title ?? "")));
     let applicantEmbedding: number[] | null = null;
     let applicantTitleEmbedding: number[] | null = null;
     let jobEmbeddings: number[][] = [];
@@ -905,8 +908,8 @@ Deno.serve(async (req) => {
       if (embeddings) {
         applicantEmbedding = embeddings[0] ?? null;
         applicantTitleEmbedding = embeddings[1] ?? null;
-        jobEmbeddings = embeddings.slice(2, 2 + candidateJobs.length);
-        jobTitleEmbeddings = embeddings.slice(2 + candidateJobs.length);
+        jobEmbeddings = embeddings.slice(2, 2 + semanticCandidateJobs.length);
+        jobTitleEmbeddings = embeddings.slice(2 + semanticCandidateJobs.length);
       }
     } catch (embeddingError) {
       console.error(embeddingError);
@@ -1017,6 +1020,8 @@ Deno.serve(async (req) => {
       success: true,
       recommendations,
       model: applicantEmbedding ? "gemini-embedding-001" : "weighted-fallback",
+      semantic_candidates: applicantEmbedding ? semanticCandidateJobs.length : 0,
+      total_candidates: candidateJobs.length,
     });
   } catch (error) {
     return jsonResponse(

@@ -1990,52 +1990,6 @@ function App() {
       .sort((left, right) => right.score - left.score);
   }, [rankedListings, searchQuery, state.activeCategory]);
 
-  const autoRecommendationKey = useMemo(() => {
-    if (!state.profile.aiProfile) return "";
-
-    return [
-      state.profile.resumeFileName,
-      state.profile.resumeUploadedAt,
-      state.profile.jobTitle,
-      state.profile.location,
-      state.profile.skills.join("|"),
-      state.liveJobs.length,
-      isStudent ? state.activeCategory : "all-categories",
-    ].join("::");
-  }, [
-    isStudent,
-    state.activeCategory,
-    state.liveJobs.length,
-    state.profile.aiProfile,
-    state.profile.jobTitle,
-    state.profile.location,
-    state.profile.resumeFileName,
-    state.profile.resumeUploadedAt,
-    state.profile.skills,
-  ]);
-
-  useEffect(() => {
-    if (!hasSupabaseConfig) return;
-    if (!state.profile.aiProfile) return;
-    if (state.liveJobs.length === 0) return;
-    if (!isStudent && state.aiRecommendations.length > 0) return;
-    if (state.aiStatus.refreshingRecommendations || state.aiStatus.analyzingResume) return;
-    if (state.aiStatus.lastAutoRecommendationKey === autoRecommendationKey) return;
-
-    refreshRecommendations(state.profile, state.profile.aiProfile, {
-      autoKey: autoRecommendationKey,
-    }).catch(() => {});
-  }, [
-    state.aiRecommendations.length,
-    state.aiStatus.lastAutoRecommendationKey,
-    state.aiStatus.analyzingResume,
-    state.aiStatus.refreshingRecommendations,
-    isStudent,
-    state.liveJobs.length,
-    state.profile,
-    autoRecommendationKey,
-  ]);
-
   useEffect(() => {
     if (!isStudent) return;
     if (state.activeCategory === "internships" || state.activeCategory === "volunteer") return;
