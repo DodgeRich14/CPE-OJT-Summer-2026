@@ -17,6 +17,12 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function normalizeRole(role: unknown) {
+  return ["Applicant", "Student", "Employer", "Admin"].includes(String(role))
+    ? String(role)
+    : "Applicant";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -33,7 +39,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: false, error: "Email, password, and full name are required." });
     }
 
-  const normalizedRole = ["Applicant", "Student", "Employer", "Admin"].includes(role) ? role : "Applicant";
+    const normalizedRole = normalizeRole(role);
     const normalizedEmail = String(email).trim().toLowerCase();
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -79,13 +85,30 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: false, error: error.message });
     }
 
+    const createdUser = data.user;
+    const profilePayload = {
+      id: createdUser?.id ?? "",
+      role: normalizedRole,
+      status: "Active",
+      full_name: String(fullName).trim(),
+      first_name: String(firstName || "").trim(),
+      last_name: String(lastName || "").trim(),
+      username: `@${String(fullName).trim().toLowerCase().replace(/\s+/g, ".")}`,
+      email: normalizedEmail,
+    };
+
+    const { error: profileError } = await admin
+      .from("profiles")
+      .upsert(profilePayload, { onConflict: "id" });
+
     return jsonResponse({
       success: true,
       user: {
-        id: data.user?.id ?? "",
-        email: data.user?.email ?? "",
+        id: createdUser?.id ?? "",
+        email: createdUser?.email ?? "",
         role: normalizedRole,
       },
+      profileWarning: profileError?.message ?? "",
     });
   } catch (error) {
     return jsonResponse(

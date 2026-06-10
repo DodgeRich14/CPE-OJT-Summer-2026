@@ -2234,22 +2234,47 @@ function App() {
   async function loadAdminUsers(cancelled = false) {
     if (!hasSupabaseConfig || !supabase) return;
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id, full_name, role, status, created_at, email, username, location, job_title, about, skills")
-      .order("created_at", { ascending: false });
+    let users = [];
+
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-list-users");
+
+      if (error) {
+        throw new Error(error.message || "Unable to load the registered users.");
+      }
+
+      if (data?.error) {
+        throw new Error(data.error || "Unable to load the registered users.");
+      }
+
+      users = Array.isArray(data?.users) ? data.users : [];
+    } catch (functionError) {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, full_name, role, status, created_at, email, username, location, job_title, about, skills")
+        .order("created_at", { ascending: false });
+
+      if (cancelled) return;
+
+      if (error) {
+        setAuthFeedback(
+          functionError instanceof Error
+            ? `${functionError.message} Fallback profile loading also failed: ${error.message || "Unable to load the registered users."}`
+            : error.message || "Unable to load the registered users.",
+        );
+        return;
+      }
+
+      users = data ?? [];
+    }
 
     if (cancelled) return;
 
-    if (error) {
-      setAuthFeedback(error.message || "Unable to load the registered users.");
-      return;
-    }
-
     setState((current) => ({
       ...current,
-      adminUsers: (data ?? []).map(mapAdminUserRecord),
+      adminUsers: users.map(mapAdminUserRecord),
     }));
+    setAuthFeedback("");
   }
 
   async function handleProfilePhotoChange(event) {
@@ -2641,7 +2666,6 @@ function App() {
     setState((current) => ({
       ...current,
       applications: current.applications.filter((id) => id !== jobId),
-      saved: current.saved.includes(jobId) ? current.saved : [...current.saved, jobId],
       expandedApplicationId: current.expandedApplicationId === jobId ? null : current.expandedApplicationId,
     }));
   }
@@ -3663,6 +3687,8 @@ function App() {
                 placeholder="Search users by name, email, role, or title..."
               />
             </label>
+
+            {authFeedback ? <p className="auth-feedback">{authFeedback}</p> : null}
 
             <div className="progress-card-list">
               {filteredAdminUsers.map((item) => (
