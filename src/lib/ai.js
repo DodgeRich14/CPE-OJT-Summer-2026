@@ -756,7 +756,7 @@ function buildRoadmapPhase(id, label, range, title, skills, actions, nodeClass, 
 
 const ROADMAP_REQUEST_TIMEOUT_MS = 15000;
 
-function computeCareerRoadmapFallback(payload) {
+export function buildCareerRoadmapFallback(payload) {
   const profile = payload?.profile ?? {};
   const resumeProfile = payload?.resumeProfile ?? {};
   const profileSkills = dedupeSkills([...(profile.skills ?? []), ...(resumeProfile.skills ?? [])]);
@@ -870,7 +870,7 @@ export async function fetchCareerRoadmaps(payload) {
   } catch (requestError) {
     const detailedError = requestError instanceof Error ? requestError.message : "The generate-career-roadmaps function could not be reached.";
     return {
-      ...computeCareerRoadmapFallback(payload),
+      ...buildCareerRoadmapFallback(payload),
       fallbackError: detailedError,
       fallbackSource: "edge-function-timeout",
     };
@@ -911,7 +911,7 @@ export async function fetchCareerRoadmaps(payload) {
     }
 
     return {
-      ...computeCareerRoadmapFallback(payload),
+      ...buildCareerRoadmapFallback(payload),
       fallbackError: detailedError,
       fallbackSource: "edge-function-request",
     };
@@ -919,7 +919,7 @@ export async function fetchCareerRoadmaps(payload) {
 
   if (data?.error) {
     return {
-      ...computeCareerRoadmapFallback(payload),
+      ...buildCareerRoadmapFallback(payload),
       fallbackError: data.error || "The generate-career-roadmaps function returned an error.",
       fallbackSource: "edge-function-response",
     };
@@ -927,7 +927,7 @@ export async function fetchCareerRoadmaps(payload) {
 
   if (!Array.isArray(data?.roadmaps) || data.roadmaps.length === 0) {
     return {
-      ...computeCareerRoadmapFallback(payload),
+      ...buildCareerRoadmapFallback(payload),
       fallbackError: "No roadmap content was returned for the current applied jobs.",
       fallbackSource: "empty-roadmap-response",
     };

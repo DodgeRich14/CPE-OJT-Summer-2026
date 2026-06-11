@@ -157,11 +157,15 @@ Deno.serve(async (request) => {
     return jsonResponse({ error: "Method not allowed." }, 405);
   }
 
+  let profile: Record<string, unknown> = {};
+  let resumeProfile: Record<string, unknown> = {};
+  let jobs: Array<Record<string, unknown>> = [];
+
   try {
     const payload = await request.json();
-    const profile = payload?.profile && typeof payload.profile === "object" ? payload.profile : {};
-    const resumeProfile = payload?.resumeProfile && typeof payload.resumeProfile === "object" ? payload.resumeProfile : {};
-    const jobs = Array.isArray(payload?.jobs) ? payload.jobs.filter(Boolean).slice(0, 3) : [];
+    profile = payload?.profile && typeof payload.profile === "object" ? payload.profile : {};
+    resumeProfile = payload?.resumeProfile && typeof payload.resumeProfile === "object" ? payload.resumeProfile : {};
+    jobs = Array.isArray(payload?.jobs) ? payload.jobs.filter(Boolean).slice(0, 3) : [];
 
     if (jobs.length === 0) {
       return jsonResponse({
@@ -243,6 +247,7 @@ Deno.serve(async (request) => {
           ],
           generationConfig: {
             temperature: 0.2,
+            maxOutputTokens: 4096,
             responseMimeType: "application/json",
             responseSchema: roadmapResponseSchema,
           },
@@ -286,12 +291,14 @@ Deno.serve(async (request) => {
     const message = error instanceof Error ? error.message : "Unknown roadmap generation error.";
     return jsonResponse({
       success: true,
-      roadmaps: [],
+      roadmaps: buildFallbackRoadmaps(profile, resumeProfile, jobs).map((roadmap) => ({
+        ...roadmap,
+        phases: roadmap.phases.map((phase, index) => buildPhase(index, phase)),
+      })),
       usedFallback: true,
       roadmapEngine: "local-fallback",
       fallbackError: message,
-      error: message,
       updatedAt: new Date().toISOString(),
-    }, 500);
+    });
   }
 });

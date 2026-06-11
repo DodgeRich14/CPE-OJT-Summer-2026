@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { flushSync } from "react-dom";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { createPortal, flushSync } from "react-dom";
 import {
   ArrowRight,
   AtSign,
@@ -30,7 +30,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { fetchCareerRoadmaps, fetchLiveJobs, fetchRecommendedJobs, parseResumeProfile } from "./lib/ai";
+import { buildCareerRoadmapFallback, fetchCareerRoadmaps, fetchLiveJobs, fetchRecommendedJobs, parseResumeProfile } from "./lib/ai";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
 const STORAGE_KEY = "skillbridge-career-studio";
@@ -577,45 +577,111 @@ const matchScoreFactors = [
   { key: "freshness", label: "Posting freshness", weight: 5 },
 ];
 
-function MatchScore({ listing }) {
+function MatchScore({ listing, theme = "dark" }) {
   const breakdown = listing.scoreBreakdown;
+  const scoreRef = useRef(null);
+  const tooltipRef = useRef(null);
+  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const [tooltipPositioned, setTooltipPositioned] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState({ left: 12, top: 12 });
+  const tooltipId = useId();
+
+  useEffect(() => {
+    if (!tooltipOpen) return undefined;
+
+    function updateTooltipPosition() {
+      const scoreRect = scoreRef.current?.getBoundingClientRect();
+      const tooltipRect = tooltipRef.current?.getBoundingClientRect();
+      if (!scoreRect || !tooltipRect) return;
+
+      const viewportPadding = 12;
+      const gap = 10;
+      const maxLeft = Math.max(viewportPadding, window.innerWidth - tooltipRect.width - viewportPadding);
+      const left = Math.min(Math.max(scoreRect.right - tooltipRect.width, viewportPadding), maxLeft);
+      const spaceBelow = window.innerHeight - scoreRect.bottom - viewportPadding;
+      const spaceAbove = scoreRect.top - viewportPadding;
+      const preferredTop =
+        spaceBelow >= tooltipRect.height || spaceBelow >= spaceAbove
+          ? scoreRect.bottom + gap
+          : scoreRect.top - tooltipRect.height - gap;
+      const maxTop = Math.max(viewportPadding, window.innerHeight - tooltipRect.height - viewportPadding);
+      const top = Math.min(Math.max(preferredTop, viewportPadding), maxTop);
+
+      setTooltipPosition({ left, top });
+      setTooltipPositioned(true);
+    }
+
+    const frameId = window.requestAnimationFrame(updateTooltipPosition);
+    window.addEventListener("resize", updateTooltipPosition);
+    window.addEventListener("scroll", updateTooltipPosition, true);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", updateTooltipPosition);
+      window.removeEventListener("scroll", updateTooltipPosition, true);
+    };
+  }, [tooltipOpen]);
+
+  const tooltip = (
+    <div
+      ref={tooltipRef}
+      id={tooltipId}
+      className={`match-score-tooltip viewport-tooltip theme-${theme}${tooltipOpen && tooltipPositioned ? " visible" : ""}`}
+      role="tooltip"
+      style={tooltipPosition}
+    >
+      <div className="match-score-tooltip-heading">
+        <strong>{listing.score}% match</strong>
+        <span>{breakdown?.limitedByEvidence ? `Capped at ${breakdown.evidenceCeiling}% by available evidence` : "Weighted fit score"}</span>
+      </div>
+      <div className="match-score-formula">
+        {matchScoreFactors.map((factor) => {
+          const factorScore = breakdown?.[factor.key] ?? 0;
+          const contribution = Math.round((factorScore * factor.weight) / 100);
+
+          return (
+            <div key={factor.key} className="match-score-factor">
+              <span>{factor.label} ({factor.weight}%)</span>
+              <strong>{factorScore}% <small>+{contribution}</small></strong>
+            </div>
+          );
+        })}
+      </div>
+      <p>
+        Weighted total: <strong>{breakdown?.weightedTotal ?? listing.score}%</strong>
+        {breakdown?.limitedByEvidence ? `, then limited to ${breakdown.evidenceCeiling}% by the profile's available skills, domain, or experience evidence.` : "."}
+      </p>
+      <div className="match-score-evidence">
+        <span><strong>Matched:</strong> {listing.rawMatchedSkills?.join(", ") || "No direct skills yet"}</span>
+        <span><strong>Gaps:</strong> {listing.gaps?.join(", ") || "No identified gaps"}</span>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="match-score-wrap">
+    <div
+      className="match-score-wrap"
+      onMouseEnter={() => {
+        setTooltipPositioned(false);
+        setTooltipOpen(true);
+      }}
+      onMouseLeave={() => setTooltipOpen(false)}
+      onFocus={() => {
+        setTooltipPositioned(false);
+        setTooltipOpen(true);
+      }}
+      onBlur={() => setTooltipOpen(false)}
+    >
       <div
+        ref={scoreRef}
         className={`listing-score ${getScoreToneClass(listing.score)}`}
         tabIndex="0"
+        aria-describedby={tooltipId}
         aria-label={`${listing.score}% match. Focus or hover for score breakdown.`}
       >
         {listing.score}
       </div>
-      <div className="match-score-tooltip" role="tooltip">
-        <div className="match-score-tooltip-heading">
-          <strong>{listing.score}% match</strong>
-          <span>{breakdown?.limitedByEvidence ? `Capped at ${breakdown.evidenceCeiling}% by available evidence` : "Weighted fit score"}</span>
-        </div>
-        <div className="match-score-formula">
-          {matchScoreFactors.map((factor) => {
-            const factorScore = breakdown?.[factor.key] ?? 0;
-            const contribution = Math.round((factorScore * factor.weight) / 100);
-
-            return (
-              <div key={factor.key} className="match-score-factor">
-                <span>{factor.label} ({factor.weight}%)</span>
-                <strong>{factorScore}% <small>+{contribution}</small></strong>
-              </div>
-            );
-          })}
-        </div>
-        <p>
-          Weighted total: <strong>{breakdown?.weightedTotal ?? listing.score}%</strong>
-          {breakdown?.limitedByEvidence ? `, then limited to ${breakdown.evidenceCeiling}% by the profile's available skills, domain, or experience evidence.` : "."}
-        </p>
-        <div className="match-score-evidence">
-          <span><strong>Matched:</strong> {listing.rawMatchedSkills?.join(", ") || "No direct skills yet"}</span>
-          <span><strong>Gaps:</strong> {listing.gaps?.join(", ") || "No identified gaps"}</span>
-        </div>
-      </div>
+      {tooltipOpen && typeof document !== "undefined" ? createPortal(tooltip, document.body) : null}
     </div>
   );
 }
@@ -1456,6 +1522,24 @@ function createProfileUpdatePayload(profile) {
   };
 }
 
+async function persistProfileRecord(accountId, profile) {
+  if (!hasSupabaseConfig || !supabase || !accountId) return;
+
+  const { error } = await supabase
+    .from("profiles")
+    .upsert(
+      {
+        id: accountId,
+        ...createProfileUpdatePayload(profile),
+      },
+      { onConflict: "id" },
+    );
+
+  if (error) {
+    throw new Error(error.message || "Unable to save your profile.");
+  }
+}
+
 function formatAdminUserStatus(status) {
   if (status === "Active") return "Verified";
   return status || "Pending";
@@ -1512,6 +1596,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [adminUserSearchQuery, setAdminUserSearchQuery] = useState("");
   const [activeAnnouncement, setActiveAnnouncement] = useState(0);
+  const [activeRoadmapIndex, setActiveRoadmapIndex] = useState(0);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "Applicant" });
   const [authFeedback, setAuthFeedback] = useState("");
   const [announcementForm, setAnnouncementForm] = useState({
@@ -1632,13 +1717,20 @@ function App() {
         return;
       }
 
-      const { data: profileRecord } = await supabase
+      setAuthFeedback("");
+
+      const { data: profileRecord, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", session.user.id)
         .maybeSingle();
 
       if (cancelled) return;
+
+      if (profileError) {
+        setAuthFeedback(`Profile reload failed: ${profileError.message}`);
+        return;
+      }
 
       if (profileRecord?.status === "Suspended") {
         await handleSuspendedAccount(profileRecord.email || session.user.email || "");
@@ -1655,17 +1747,11 @@ function App() {
           role: mappedProfile.role,
         };
 
-        supabase
-          .from("profiles")
-          .upsert(
-            {
-              id: session.user.id,
-              ...createProfileUpdatePayload(fallbackProfile),
-              status: "Active",
-            },
-            { onConflict: "id" },
-          )
-          .catch(() => {});
+        try {
+          await persistProfileRecord(session.user.id, fallbackProfile);
+        } catch (error) {
+          setAuthFeedback(error instanceof Error ? error.message : "Unable to create your profile record.");
+        }
       }
 
       let subscriptionState = {
@@ -1675,13 +1761,17 @@ function App() {
       };
 
       if (mappedProfile.role !== "Admin") {
-        const { data: subscriptionRecord } = await supabase
+        const { data: subscriptionRecord, error: subscriptionError } = await supabase
           .from("subscriptions")
           .select("plan,status,renewal_date")
           .eq("user_id", session.user.id)
           .order("renewal_date", { ascending: false, nullsFirst: false })
           .limit(1)
           .maybeSingle();
+
+        if (subscriptionError) {
+          setAuthFeedback(`Subscription reload failed: ${subscriptionError.message}`);
+        }
 
         if (subscriptionRecord) {
           subscriptionState = {
@@ -1708,6 +1798,15 @@ function App() {
         },
         subscription: subscriptionState,
         profile: mappedProfile,
+        profileExperience: Array.isArray(mappedProfile.aiProfile?.experience_entries)
+          ? mappedProfile.aiProfile.experience_entries.map((item, index) => ({
+              id: item.id || `${session.user.id}-resume-${index}`,
+              title: item.title || "Resume experience",
+              company: item.company || "Resume entry",
+              period: item.period || "From uploaded resume",
+              years: item.years || "Imported",
+            }))
+          : [],
       }));
     }
 
@@ -1918,6 +2017,34 @@ function App() {
             current.expandedApplicationId && applications.includes(current.expandedApplicationId)
               ? current.expandedApplicationId
               : applications[0] ?? null,
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.auth.accountId, state.auth.isAuthenticated]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !supabase || !state.auth.isAuthenticated || !state.auth.accountId) return;
+
+    let cancelled = false;
+
+    supabase
+      .from("saved_jobs")
+      .select("job_id")
+      .eq("applicant_id", state.auth.accountId)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+
+        if (error) {
+          setAuthFeedback(`Saved jobs reload failed: ${error.message}`);
+          return;
+        }
+
+        setState((current) => ({
+          ...current,
+          saved: (data ?? []).map((row) => row.job_id).filter(Boolean),
         }));
       });
 
@@ -2216,6 +2343,17 @@ function App() {
       expanded: state.expandedRoadmapId === `${roadmap.job_id}:${phase.id}`,
     })),
   }));
+  const activeRoadmap = roadmapItems[activeRoadmapIndex] ?? roadmapItems[0] ?? null;
+  useEffect(() => {
+    if (roadmapItems.length === 0) {
+      setActiveRoadmapIndex(0);
+      return;
+    }
+
+    if (activeRoadmapIndex >= roadmapItems.length) {
+      setActiveRoadmapIndex(roadmapItems.length - 1);
+    }
+  }, [activeRoadmapIndex, roadmapItems.length]);
   useEffect(() => {
     if (isAdmin || !state.auth.isAuthenticated || !hasActiveSubscription) return;
 
@@ -2267,18 +2405,7 @@ function App() {
 
     let cancelled = false;
 
-    setState((current) => ({
-      ...current,
-      careerRoadmaps: current.careerRoadmaps.filter((item) => activeRoadmapIds.has(String(item.job_id))),
-      roadmapStatus: {
-        ...current.roadmapStatus,
-        loading: true,
-        error: "",
-        lastGeneratedKey: roadmapGenerationKey,
-      },
-    }));
-
-    fetchCareerRoadmaps({
+    const roadmapPayload = {
       profile: {
         role: state.profile.role,
         fullName: state.profile.fullName,
@@ -2300,41 +2427,88 @@ function App() {
         gaps: job.gaps ?? [],
         matchScore: job.score,
       })),
-    })
-      .then((result) => {
-        if (cancelled) return;
+    };
+    const immediateRoadmaps = buildCareerRoadmapFallback(roadmapPayload).roadmaps;
 
-        setState((current) => ({
-          ...current,
-          expandedRoadmapId:
-            current.expandedRoadmapId &&
-            (result.roadmaps ?? []).some((roadmap) =>
-              (roadmap.phases ?? []).some((phase) => `${roadmap.job_id}:${phase.id}` === current.expandedRoadmapId),
-            )
-              ? current.expandedRoadmapId
-              : "",
-          careerRoadmaps: result.roadmaps ?? [],
-          roadmapStatus: {
-            loading: false,
-            error: result.usedFallback && result.fallbackError ? `Roadmap used local fallback: ${result.fallbackError}` : "",
-            updatedAt: result.updatedAt || new Date().toISOString(),
-            roadmapEngine: result.roadmapEngine || (result.usedFallback ? "local-fallback" : ""),
-            lastGeneratedKey: roadmapGenerationKey,
-          },
-        }));
-      })
-      .catch((error) => {
-        if (cancelled) return;
+    setState((current) => ({
+      ...current,
+      careerRoadmaps: immediateRoadmaps,
+      roadmapStatus: {
+        ...current.roadmapStatus,
+        loading: true,
+        error: "",
+        updatedAt: new Date().toISOString(),
+        roadmapEngine: "local-fallback",
+        lastGeneratedKey: roadmapGenerationKey,
+      },
+    }));
 
-        setState((current) => ({
+    async function enhanceRoadmapsSequentially() {
+      const results = [];
+
+      for (const job of roadmapPayload.jobs) {
+        if (cancelled) break;
+
+        try {
+          const result = await fetchCareerRoadmaps({
+            ...roadmapPayload,
+            jobs: [job],
+          });
+
+          results.push({ status: "fulfilled", value: result });
+          if (cancelled) break;
+
+          const generatedRoadmap = result.roadmaps?.[0];
+          if (generatedRoadmap && !result.usedFallback) {
+            setState((current) => {
+              if (current.roadmapStatus.lastGeneratedKey !== roadmapGenerationKey) return current;
+
+              return {
+                ...current,
+                careerRoadmaps: current.careerRoadmaps.map((roadmap) =>
+                  String(roadmap.job_id) === String(generatedRoadmap.job_id) ? generatedRoadmap : roadmap,
+                ),
+                roadmapStatus: {
+                  ...current.roadmapStatus,
+                  updatedAt: result.updatedAt || new Date().toISOString(),
+                  roadmapEngine: "gemini-2.5-flash",
+                },
+              };
+            });
+          }
+
+        } catch (error) {
+          results.push({ status: "rejected", reason: error });
+        }
+      }
+
+      if (cancelled) return;
+
+      const failures = results
+        .filter((result) => result.status === "rejected" || result.value?.fallbackError)
+        .map((result) => result.status === "rejected" ? result.reason?.message : result.value.fallbackError)
+        .filter(Boolean);
+      const hasGeminiRoadmap = results.some(
+        (result) => result.status === "fulfilled" && !result.value?.usedFallback && result.value?.roadmaps?.length > 0,
+      );
+
+      setState((current) => {
+        if (current.roadmapStatus.lastGeneratedKey !== roadmapGenerationKey) return current;
+
+        return {
           ...current,
           roadmapStatus: {
             ...current.roadmapStatus,
             loading: false,
-            error: error.message || "Failed to generate career roadmaps.",
+            error: failures.length > 0 ? `Some roadmaps used the local version: ${failures[0]}` : "",
+            updatedAt: new Date().toISOString(),
+            roadmapEngine: hasGeminiRoadmap ? "gemini-2.5-flash" : "local-fallback",
           },
-        }));
+        };
       });
+    }
+
+    enhanceRoadmapsSequentially();
 
     return () => {
       cancelled = true;
@@ -3060,18 +3234,49 @@ function App() {
     }
   }
 
-  function toggleSave(jobId) {
+  async function toggleSave(jobId) {
     if (!state.auth.isAuthenticated) {
       openAuthModal("login");
       return;
     }
 
+    const shouldRemove = state.saved.includes(jobId);
+
     setState((current) => ({
       ...current,
-      saved: current.saved.includes(jobId)
+      saved: shouldRemove
         ? current.saved.filter((id) => id !== jobId)
         : [...current.saved, jobId],
     }));
+
+    if (!hasSupabaseConfig || !supabase || !state.auth.accountId) return;
+
+    const request = shouldRemove
+      ? supabase
+          .from("saved_jobs")
+          .delete()
+          .eq("applicant_id", state.auth.accountId)
+          .eq("job_id", jobId)
+      : supabase
+          .from("saved_jobs")
+          .upsert(
+            {
+              applicant_id: state.auth.accountId,
+              job_id: jobId,
+            },
+            { onConflict: "applicant_id,job_id" },
+          );
+    const { error } = await request;
+
+    if (error) {
+      setState((current) => ({
+        ...current,
+        saved: shouldRemove
+          ? [...new Set([...current.saved, jobId])]
+          : current.saved.filter((id) => id !== jobId),
+      }));
+      setAuthFeedback(`Saved job update failed: ${error.message}`);
+    }
   }
 
   function openJobDetails(jobId) {
@@ -3309,6 +3514,7 @@ function App() {
       });
 
       const parsed = response.parsedProfile ?? {};
+      const usedFallback = Boolean(parsed.usedFallback);
       const parsedSkills = Array.isArray(parsed.skills) && parsed.skills.length > 0 ? parsed.skills : profileSnapshot.skills;
       const parsedFullName = String(parsed.full_name || "").trim();
       const parsedFirstName = String(parsed.first_name || "").trim();
@@ -3327,17 +3533,17 @@ function App() {
               years: item.years || "Imported",
             }))
         : [];
-      const nextFullName = parsedFullName || profileSnapshot.fullName;
-      const nextFirstName = parsedFirstName || nextFullName.split(" ")[0] || profileSnapshot.firstName;
-      const nextLastName = parsedLastName || nextFullName.split(" ").slice(1).join(" ") || profileSnapshot.lastName;
+      const nextFullName = usedFallback ? profileSnapshot.fullName : parsedFullName || profileSnapshot.fullName;
+      const nextFirstName = usedFallback ? profileSnapshot.firstName : parsedFirstName || nextFullName.split(" ")[0] || profileSnapshot.firstName;
+      const nextLastName = usedFallback ? profileSnapshot.lastName : parsedLastName || nextFullName.split(" ").slice(1).join(" ") || profileSnapshot.lastName;
       const nextProfile = {
         ...profileSnapshot,
         fullName: nextFullName,
         firstName: nextFirstName,
         lastName: nextLastName,
-        jobTitle: parsed.headline || profileSnapshot.jobTitle,
-        location: parsedLocation,
-        about: parsed.summary || profileSnapshot.about,
+        jobTitle: usedFallback ? profileSnapshot.jobTitle : parsed.headline || profileSnapshot.jobTitle,
+        location: usedFallback ? profileSnapshot.location : parsedLocation,
+        about: usedFallback ? profileSnapshot.about : parsed.summary || profileSnapshot.about,
         skills: parsedSkills,
         resumeText,
         aiProfile: {
@@ -3360,20 +3566,18 @@ function App() {
         aiStatus: {
           ...current.aiStatus,
           analyzingResume: false,
-          error: "",
+          error: usedFallback
+            ? `Gemini resume analysis was unavailable. Your existing profile details were preserved and locally extracted skills were saved. ${parsed.parserError || ""}`.trim()
+            : "",
           updatedAt: getTodayShortDate(),
         },
       }));
 
-      if (hasSupabaseConfig && supabase && state.auth.accountId) {
-        await supabase
-          .from("profiles")
-          .update(createProfileUpdatePayload(nextProfile))
-          .eq("id", state.auth.accountId);
-      }
+      await persistProfileRecord(state.auth.accountId, nextProfile);
     } catch (error) {
       setState((current) => ({
         ...current,
+        profileSavedAt: "Resume save failed",
         aiStatus: {
           ...current.aiStatus,
           analyzingResume: false,
@@ -3393,16 +3597,11 @@ function App() {
       username: state.profile.username || `@${nextFullName.toLowerCase().replace(/\s+/g, ".")}`,
     };
 
-    if (hasSupabaseConfig && supabase && state.auth.accountId) {
-      const { error } = await supabase
-        .from("profiles")
-        .update(createProfileUpdatePayload(nextProfile))
-        .eq("id", state.auth.accountId);
-
-      if (error) {
-        setAuthFeedback(error.message || "Unable to save profile changes.");
-        return;
-      }
+    try {
+      await persistProfileRecord(state.auth.accountId, nextProfile);
+    } catch (error) {
+      setAuthFeedback(error instanceof Error ? error.message : "Unable to save profile changes.");
+      return;
     }
 
     setAuthFeedback("");
@@ -3900,8 +4099,18 @@ function App() {
         renewalDate: "",
       },
       profile: guestProfile,
+      applications: [],
+      saved: [],
+      applicationStatusById: initialApplicationStatus,
+      careerRoadmaps: [],
+      expandedApplicationId: null,
+      expandedRoadmapId: "",
+      profileExperience: [],
       profileCertificates: [],
       adminCertifications: [],
+      roadmapStatus: {
+        ...defaultState.roadmapStatus,
+      },
     }));
   }
 
@@ -4804,7 +5013,7 @@ function App() {
                           <p>{listing.company}</p>
                           <span>{listing.meta}</span>
                         </div>
-                        <MatchScore listing={listing} />
+                        <MatchScore listing={listing} theme={state.theme} />
                       </div>
 
                       <div className="listing-meta-row">
@@ -4921,11 +5130,12 @@ function App() {
                           <span>{card.appliedDate}</span>
                         </div>
                         <div className="application-side">
-                          <MatchScore listing={card} />
+                          <MatchScore listing={card} theme={state.theme} />
                           <button
                             className="expand-button"
                             type="button"
                             aria-label="Toggle application details"
+                            aria-expanded={expanded}
                             onClick={(event) => {
                               event.stopPropagation();
                               patchState({ expandedApplicationId: expanded ? null : card.id });
@@ -4937,7 +5147,7 @@ function App() {
                       </div>
 
                       {expanded && (
-                        <div className="application-details">
+                        <div className="application-details application-details-appear">
                           <div className="application-subrow">
                             <span>{card.meta.split("|").at(-1)?.trim()}</span>
                             <span>Applied {card.appliedDate}</span>
@@ -4998,7 +5208,7 @@ function App() {
                         <span>{card.posted}</span>
                       </div>
                       <div className="application-side">
-                        <MatchScore listing={card} />
+                        <MatchScore listing={card} theme={state.theme} />
                       </div>
                     </div>
                   </article>
@@ -5137,7 +5347,13 @@ function App() {
 
             <div className="roadmap-meta">
               <span className="status-badge ready">{roadmapCandidateJobs.length}/3 tracked applications</span>
-              <span>{state.roadmapStatus.roadmapEngine === "local-fallback" ? "Local fallback roadmap" : "Gemini-assisted roadmap"}</span>
+              <span>
+                {state.roadmapStatus.loading
+                  ? "Improving with Gemini..."
+                  : state.roadmapStatus.roadmapEngine === "local-fallback"
+                    ? "Instant local roadmap"
+                    : "Gemini-assisted roadmap"}
+              </span>
               <span>
                 {state.roadmapStatus.updatedAt ? `Updated ${getTodayLongDateFromValue(state.roadmapStatus.updatedAt)}` : "Waiting for roadmap generation"}
               </span>
@@ -5168,38 +5384,80 @@ function App() {
               </div>
             ) : null}
 
-            {roadmapItems.map((roadmap) => (
-              <section key={roadmap.job_id} className="roadmap-job-group">
+            {roadmapItems.length > 1 ? (
+              <div className="roadmap-switcher">
+                <div className="roadmap-job-tabs" role="tablist" aria-label="Applied job roadmaps">
+                  {roadmapItems.map((roadmap, index) => (
+                    <button
+                      key={roadmap.job_id}
+                      className={`roadmap-job-tab${index === activeRoadmapIndex ? " active" : ""}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={index === activeRoadmapIndex}
+                      onClick={() => setActiveRoadmapIndex(index)}
+                    >
+                      <strong>{roadmap.title}</strong>
+                      <span>{roadmap.company_name || "External employer"}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="roadmap-switcher-controls">
+                  <button
+                    className="roadmap-switcher-button"
+                    type="button"
+                    aria-label="Show previous applied job roadmap"
+                    disabled={activeRoadmapIndex === 0}
+                    onClick={() => setActiveRoadmapIndex((current) => Math.max(0, current - 1))}
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <span>{activeRoadmapIndex + 1} / {roadmapItems.length}</span>
+                  <button
+                    className="roadmap-switcher-button"
+                    type="button"
+                    aria-label="Show next applied job roadmap"
+                    disabled={activeRoadmapIndex >= roadmapItems.length - 1}
+                    onClick={() => setActiveRoadmapIndex((current) => Math.min(roadmapItems.length - 1, current + 1))}
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {activeRoadmap ? (
+              <section key={activeRoadmap.job_id} className="roadmap-job-group content-appear">
                 <div className="roadmap-job-head">
                   <div>
-                    <h2>{roadmap.title}</h2>
-                    <p>{roadmap.company_name || "External employer"}</p>
+                    <h2>{activeRoadmap.title}</h2>
+                    <p>{activeRoadmap.company_name || "External employer"}</p>
                   </div>
                   <div className="roadmap-job-meta">
-                    <span>{roadmap.estimated_timeline || "6-10 weeks"}</span>
-                    <span>{roadmap.target_role || state.profile.jobTitle || state.profile.aiProfile?.suggested_roles?.[0] || "Target role"}</span>
+                    <span>{activeRoadmap.estimated_timeline || "6-10 weeks"}</span>
+                    <span>{activeRoadmap.target_role || state.profile.jobTitle || state.profile.aiProfile?.suggested_roles?.[0] || "Target role"}</span>
                   </div>
                 </div>
 
-                {roadmap.fit_summary ? <p className="roadmap-fit-summary">{roadmap.fit_summary}</p> : null}
+                {activeRoadmap.fit_summary ? <p className="roadmap-fit-summary">{activeRoadmap.fit_summary}</p> : null}
 
-                {roadmap.focus_skills?.length ? (
+                {activeRoadmap.focus_skills?.length ? (
                   <div className="progress-tags roadmap-focus-tags">
-                    {roadmap.focus_skills.map((skill) => (
+                    {activeRoadmap.focus_skills.map((skill) => (
                       <span key={skill}>{skill}</span>
                     ))}
                   </div>
                 ) : null}
 
                 <div className="roadmap-timeline">
-                  {roadmap.phases.map((item, index) => (
-                    <div key={`${roadmap.job_id}:${item.id}`} className="roadmap-row">
+                  {activeRoadmap.phases.map((item, index) => (
+                    <div key={`${activeRoadmap.job_id}:${item.id}`} className="roadmap-row">
                       <div className="timeline-node-wrap">
                         <div className={`timeline-node ${item.nodeClass}`}>{item.nodeClass === "done" ? <BadgeCheck size={13} /> : null}</div>
-                        {index < roadmap.phases.length - 1 && <div className={`timeline-line ${item.nodeClass}`} />}
+                        {index < activeRoadmap.phases.length - 1 && <div className={`timeline-line ${item.nodeClass}`} />}
                       </div>
 
-                      <article className={`roadmap-card interactive-card ${item.nodeClass}`} onClick={() => toggleRoadmapItem(`${roadmap.job_id}:${item.id}`)}>
+                      <article className={`roadmap-card interactive-card ${item.nodeClass}`} onClick={() => toggleRoadmapItem(`${activeRoadmap.job_id}:${item.id}`)}>
                         <div className="roadmap-card-top">
                           <div>
                             <div className="roadmap-labels">
@@ -5215,7 +5473,7 @@ function App() {
                             aria-label="Toggle roadmap step"
                             onClick={(event) => {
                               event.stopPropagation();
-                              toggleRoadmapItem(`${roadmap.job_id}:${item.id}`);
+                              toggleRoadmapItem(`${activeRoadmap.job_id}:${item.id}`);
                             }}
                           >
                             {item.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -5263,7 +5521,7 @@ function App() {
                   ))}
                 </div>
               </section>
-            ))}
+            ) : null}
           </section>
         )}
 
@@ -5480,6 +5738,8 @@ function App() {
             </div>
 
             <div key={state.profilePanelTab} className="profile-panel-body content-appear">
+              {authFeedback ? <p className="auth-feedback">{authFeedback}</p> : null}
+
               {state.profilePanelTab === "info" && !isAdmin && (
                 <div className="profile-section-stack">
                   <div className="profile-label-group">
@@ -6269,7 +6529,7 @@ function App() {
                     <span>Posted {selectedJob.posted}</span>
                     <span>{selectedJob.applicants} applicants</span>
                   </div>
-                  <MatchScore listing={selectedJob} />
+                  <MatchScore listing={selectedJob} theme={state.theme} />
                 </div>
 
                 {selectedJobRecommendation?.reason && <p className="listing-ai-reason modal-ai-reason">{selectedJobRecommendation.reason}</p>}
