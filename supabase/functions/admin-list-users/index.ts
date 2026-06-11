@@ -46,6 +46,31 @@ function buildFallbackProfile(user: Record<string, unknown>) {
   };
 }
 
+function mergeUserRecord(user: Record<string, unknown>, profile: Record<string, unknown> | null) {
+  const metadata = (user.user_metadata as Record<string, unknown> | undefined) ?? {};
+  const fallback = buildFallbackProfile(user);
+  const fullName = String(metadata.full_name || profile?.full_name || fallback.full_name || user.email || "Unnamed user").trim();
+
+  return {
+    id: String(user.id || profile?.id || ""),
+    full_name: fullName,
+    role: normalizeRole(metadata.role || profile?.role || fallback.role),
+    status: String(profile?.status || fallback.status || "Active"),
+    created_at: user.created_at || profile?.created_at || new Date().toISOString(),
+    email: String(user.email || profile?.email || ""),
+    username: String(profile?.username || `@${fullName.toLowerCase().replace(/\s+/g, ".")}`),
+    location: String(profile?.location || ""),
+    job_title: String(profile?.job_title || ""),
+    about: String(profile?.about || ""),
+    skills: Array.isArray(profile?.skills) ? profile.skills : [],
+  };
+}
+
+function isCallerAdmin(user: Record<string, unknown>, profile: Record<string, unknown> | null) {
+  const metadata = (user.user_metadata as Record<string, unknown> | undefined) ?? {};
+  return normalizeRole(profile?.role || metadata.role) === "Admin";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -94,7 +119,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ success: false, error: callerProfileError.message }, 403);
     }
 
-    if (callerProfile?.role !== "Admin") {
+    if (!isCallerAdmin(user, callerProfile)) {
       return jsonResponse({ success: false, error: "Admin access is required." }, 403);
     }
 
@@ -144,21 +169,8 @@ Deno.serve(async (req) => {
     }
 
     const users = allUsers.map((entry) => {
-      const profile = profileMap.get(String(entry.id || "")) ?? buildFallbackProfile(entry);
-
-      return {
-        id: profile.id,
-        full_name: profile.full_name,
-        role: profile.role,
-        status: profile.status,
-        created_at: profile.created_at || entry.created_at || new Date().toISOString(),
-        email: profile.email || entry.email || "",
-        username: profile.username || "",
-        location: profile.location || "",
-        job_title: profile.job_title || "",
-        about: profile.about || "",
-        skills: Array.isArray(profile.skills) ? profile.skills : [],
-      };
+      const profile = profileMap.get(String(entry.id || "")) ?? null;
+      return mergeUserRecord(entry, profile);
     });
 
     return jsonResponse({ success: true, users });

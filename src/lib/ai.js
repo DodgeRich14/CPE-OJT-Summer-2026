@@ -740,6 +740,202 @@ export async function fetchRecommendedJobs(payload) {
   return data;
 }
 
+function buildRoadmapPhase(id, label, range, title, skills, actions, nodeClass, status = "", statusClass = "") {
+  return {
+    id,
+    label,
+    range,
+    title,
+    skills: dedupeSkills(skills).slice(0, 6),
+    actions: dedupeSkills(actions).slice(0, 4),
+    nodeClass,
+    status,
+    statusClass,
+  };
+}
+
+const ROADMAP_REQUEST_TIMEOUT_MS = 15000;
+
+function computeCareerRoadmapFallback(payload) {
+  const profile = payload?.profile ?? {};
+  const resumeProfile = payload?.resumeProfile ?? {};
+  const profileSkills = dedupeSkills([...(profile.skills ?? []), ...(resumeProfile.skills ?? [])]);
+  const roleFocus = profile.jobTitle || resumeProfile.suggested_roles?.[0] || "your current target role";
+  const jobs = Array.isArray(payload?.jobs) ? payload.jobs : [];
+
+  const roadmaps = jobs.slice(0, 3).map((job) => {
+    const requiredSkills = dedupeSkills(job.requiredSkills ?? job.required_skills ?? inferJobSkills(job)).slice(0, 8);
+    const matchedSkills = dedupeSkills(job.matchedSkills ?? job.matched_skills ?? getOverlapMatches(profileSkills, requiredSkills));
+    const skillGaps = dedupeSkills(job.gaps ?? job.skill_gaps ?? requiredSkills.filter((skill) => !matchedSkills.some((matched) => skillsMatch(matched, skill))));
+    const strengths = filterSpecificMatchedSkills(matchedSkills).slice(0, 4);
+    const focusSkills = dedupeSkills([...skillGaps, ...requiredSkills]).slice(0, 6);
+    const jobTitle = job.title || "Applied role";
+    const companyName = job.company || job.company_name || "Employer";
+    const fitSummary =
+      strengths.length > 0
+        ? `${jobTitle} already overlaps with your profile through ${strengths.slice(0, 3).join(", ")}. The roadmap focuses on closing the remaining gaps for this application without losing sight of ${roleFocus}.`
+        : `${jobTitle} is directionally aligned with ${roleFocus}, but it needs stronger role-specific proof. This roadmap prioritizes the clearest missing capabilities from the listing first.`;
+
+    return {
+      job_id: job.id,
+      title: jobTitle,
+      company_name: companyName,
+      target_role: roleFocus,
+      fit_summary: fitSummary,
+      estimated_timeline: skillGaps.length > 3 ? "10-14 weeks" : "6-10 weeks",
+      focus_skills: focusSkills,
+      phases: [
+        buildRoadmapPhase(
+          "now",
+          "Now",
+          "Current strengths",
+          `Anchor what already fits ${jobTitle}`,
+          strengths.length ? strengths : profileSkills.slice(0, 4),
+          [
+            "Keep your strongest matching projects easy to explain in interviews",
+            "Update your resume bullets so they mirror this job's wording",
+            "Gather one concrete proof point for each matching skill",
+          ],
+          strengths.length ? "done" : "active",
+          strengths.length ? "Complete" : "Active",
+          strengths.length ? "completed" : "in-progress",
+        ),
+        buildRoadmapPhase(
+          "phase-1",
+          "Phase 1",
+          "Weeks 1-3",
+          `Close the biggest gaps for ${jobTitle}`,
+          skillGaps.slice(0, 3),
+          skillGaps.slice(0, 3).map((skill) => `Practice ${skill} through a focused mini-project or guided lab`),
+          "active",
+          "Active",
+          "in-progress",
+        ),
+        buildRoadmapPhase(
+          "phase-2",
+          "Phase 2",
+          "Weeks 4-7",
+          `Build job-specific proof for ${companyName}`,
+          dedupeSkills([...focusSkills.slice(0, 2), "Portfolio Storytelling", "Interview Examples"]),
+          [
+            `Create one portfolio artifact that looks relevant to ${jobTitle}`,
+            "Write STAR stories around your most relevant coursework or projects",
+            "Practice explaining tradeoffs, tools, and results out loud",
+          ],
+          "future",
+        ),
+        buildRoadmapPhase(
+          "target",
+          "Target",
+          "Weeks 8+",
+          `Become a stronger repeatable match for similar ${jobTitle} roles`,
+          dedupeSkills([...requiredSkills.slice(0, 3), "Professional Positioning"]),
+          [
+            "Refresh your profile with the strongest new evidence",
+            "Apply the same proof strategy to similar openings",
+            "Keep iterating on the skills most often requested in your target roles",
+          ],
+          "future",
+        ),
+      ],
+    };
+  });
+
+  return {
+    success: true,
+    roadmaps,
+    usedFallback: true,
+    roadmapEngine: "local-fallback",
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export async function fetchCareerRoadmaps(payload) {
+  ensureSupabase();
+
+  let data;
+  let error;
+
+  try {
+    ({ data, error } = await Promise.race([
+      supabase.functions.invoke("generate-career-roadmaps", {
+        body: payload,
+      }),
+      new Promise((_, reject) => {
+        window.setTimeout(() => {
+          reject(new Error("Roadmap generation timed out after 15 seconds."));
+        }, ROADMAP_REQUEST_TIMEOUT_MS);
+      }),
+    ]));
+  } catch (requestError) {
+    const detailedError = requestError instanceof Error ? requestError.message : "The generate-career-roadmaps function could not be reached.";
+    return {
+      ...computeCareerRoadmapFallback(payload),
+      fallbackError: detailedError,
+      fallbackSource: "edge-function-timeout",
+    };
+  }
+
+  if (error) {
+    let detailedError = "The generate-career-roadmaps function could not be reached.";
+
+    if (error.context instanceof Response) {
+      try {
+        const responseBody = await error.context.text();
+        if (responseBody) {
+          try {
+            const parsed = JSON.parse(responseBody);
+            detailedError =
+              parsed?.error ||
+              parsed?.message ||
+              parsed?.code ||
+              responseBody;
+          } catch {
+            detailedError = responseBody;
+          }
+        } else {
+          detailedError = `${error.message || "Edge Function request failed."} (status ${error.context.status})`;
+        }
+      } catch {
+        detailedError = `${error.message || "Edge Function request failed."} (status ${error.context.status})`;
+      }
+    } else if (error.context && typeof error.context === "object") {
+      detailedError =
+        error.context.error ||
+        error.context.msg ||
+        error.context.message ||
+        error.message ||
+        detailedError;
+    } else if (error.message) {
+      detailedError = error.message;
+    }
+
+    return {
+      ...computeCareerRoadmapFallback(payload),
+      fallbackError: detailedError,
+      fallbackSource: "edge-function-request",
+    };
+  }
+
+  if (data?.error) {
+    return {
+      ...computeCareerRoadmapFallback(payload),
+      fallbackError: data.error || "The generate-career-roadmaps function returned an error.",
+      fallbackSource: "edge-function-response",
+    };
+  }
+
+  if (!Array.isArray(data?.roadmaps) || data.roadmaps.length === 0) {
+    return {
+      ...computeCareerRoadmapFallback(payload),
+      fallbackError: "No roadmap content was returned for the current applied jobs.",
+      fallbackSource: "empty-roadmap-response",
+    };
+  }
+
+  return data;
+}
+
 export async function fetchLiveJobs() {
   ensureSupabase();
 

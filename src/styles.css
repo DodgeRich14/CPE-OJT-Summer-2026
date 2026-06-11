@@ -848,9 +848,72 @@ select:focus-visible {
 .roadmap-meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   margin-bottom: 20px;
   color: var(--muted);
+}
+
+.roadmap-job-group {
+  display: grid;
+  gap: 14px;
+}
+
+.roadmap-job-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.roadmap-job-head h2 {
+  margin: 0;
+  font-size: 1.18rem;
+  font-family: "Playfair Display", serif;
+  font-weight: 500;
+}
+
+.roadmap-job-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.roadmap-job-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  color: var(--muted-soft);
+  text-align: right;
+}
+
+.roadmap-fit-summary {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.roadmap-focus-tags {
+  margin-top: -2px;
+}
+
+.roadmap-empty-card {
+  margin-bottom: 16px;
+}
+
+.roadmap-empty-card strong {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+
+.roadmap-empty-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.roadmap-retry-button {
+  margin-top: 14px;
 }
 
 .roadmap-timeline {
@@ -1781,6 +1844,143 @@ select:focus-visible {
   gap: 12px;
 }
 
+.announcement-composer-card {
+  gap: 22px;
+  background:
+    radial-gradient(circle at top left, rgba(112, 103, 255, 0.14), transparent 28%),
+    radial-gradient(circle at top right, rgba(18, 217, 162, 0.1), transparent 24%),
+    var(--panel);
+}
+
+.announcement-composer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.announcement-composer-head h3 {
+  margin: 6px 0 8px;
+}
+
+.announcement-composer-head p {
+  margin: 0;
+  max-width: 560px;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.announcement-composer-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+  gap: 18px;
+}
+
+.announcement-main-fields,
+.announcement-side-fields {
+  display: grid;
+  gap: 16px;
+}
+
+.announcement-main-fields {
+  padding: 18px;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.announcement-side-fields {
+  align-content: start;
+}
+
+.announcement-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.announcement-field {
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 16px;
+  background: var(--panel-soft);
+}
+
+.announcement-field > span {
+  font-size: 0.74rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-soft);
+}
+
+.announcement-field input,
+.announcement-field select,
+.announcement-field textarea {
+  width: 100%;
+  border: 1px solid rgba(92, 101, 144, 0.22);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.announcement-field textarea {
+  min-height: 148px;
+  resize: vertical;
+}
+
+.announcement-body-field {
+  min-height: 100%;
+}
+
+.announcement-banner-upload small {
+  color: var(--muted);
+}
+
+.announcement-banner-preview-wrap {
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  border-radius: 18px;
+  background: var(--panel-soft);
+}
+
+.announcement-banner-preview {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+
+.announcement-manager-card {
+  gap: 16px;
+  align-items: center;
+}
+
+.announcement-manager-thumb {
+  width: 92px;
+  height: 92px;
+  border-radius: 16px;
+  object-fit: cover;
+  border: 1px solid var(--border-soft);
+}
+
+.announcement-manager-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.announcement-manager-copy p {
+  display: -webkit-box;
+  margin: 6px 0;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.announcement-manager-copy span {
+  color: var(--muted-soft);
+  font-size: 0.82rem;
+}
+
 .auth-inline-link {
   justify-self: start;
   padding: 0;
@@ -2226,6 +2426,15 @@ select:focus-visible {
   background: rgba(112, 103, 255, 0.14);
 }
 
+.announcement-banner {
+  width: 108px;
+  height: 108px;
+  border-radius: 18px;
+  object-fit: cover;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .announcement-pills {
   display: flex;
   gap: 8px;
@@ -2348,9 +2557,10 @@ select:focus-visible {
 
 .ai-studio-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 14px;
+  flex-wrap: nowrap;
 }
 
 .ai-studio-head h3 {
@@ -2375,8 +2585,11 @@ select:focus-visible {
 
 .ai-studio-status {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 10px;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .ai-studio-status span {
@@ -3361,12 +3574,27 @@ select:focus-visible {
   .admin-two-column,
   .admin-metric-grid,
   .admin-summary-grid,
-  .cms-grid {
+  .cms-grid,
+  .announcement-composer-layout,
+  .announcement-field-grid {
     grid-template-columns: 1fr;
   }
 
-  .ai-studio-head {
+  .announcement-composer-head,
+  .announcement-manager-card,
+  .roadmap-job-head {
     flex-direction: column;
+    align-items: stretch;
+  }
+
+  .roadmap-job-meta {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .announcement-manager-thumb {
+    width: 100%;
+    height: 180px;
   }
 
   .save-action {

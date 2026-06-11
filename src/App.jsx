@@ -30,7 +30,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { fetchLiveJobs, fetchRecommendedJobs, parseResumeProfile } from "./lib/ai";
+import { fetchCareerRoadmaps, fetchLiveJobs, fetchRecommendedJobs, parseResumeProfile } from "./lib/ai";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
 const STORAGE_KEY = "skillbridge-career-studio";
@@ -725,55 +725,43 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
   };
 }
 
-const announcementSlides = [
-  {
-    id: 1,
-    tag: "Pinned",
-    label: "Career Launch",
-    title: "Fresh graduate and internship opportunities just opened across partner companies",
-    body:
-      "Students and early-career applicants can now explore verified roles in frontend, QA, operations, and product support with AI-powered fit scoring.",
-    link: "Open this week's opportunities",
-    date: "May 26, 2026",
-    targetSidebar: "discover",
-    targetCategory: "jobs",
-  },
-  {
-    id: 2,
-    tag: "Update",
-    label: "Mentorship",
-    title: "New mentor sessions are available for portfolio reviews and interview preparation",
-    body:
-      "Book time with working professionals to improve your resume, portfolio, and communication before applying to roles.",
-    link: "View mentor sessions",
-    date: "May 27, 2026",
-    targetSidebar: "mentorship",
-  },
-  {
-    id: 3,
-    tag: "Guide",
-    label: "Skill Match",
-    title: "Applicants with complete profiles are seeing stronger match percentages this week",
-    body:
-      "Add stronger summaries, updated skills, and clearer project details to improve how the platform evaluates your fit for each job posting.",
-    link: "Improve your profile",
-    date: "May 28, 2026",
-    targetSidebar: "discover",
-    openProfile: true,
-  },
-  {
-    id: 4,
-    tag: "New",
-    label: "Volunteer",
-    title: "Volunteer job listings now appear beside paid roles for students building experience",
-    body:
-      "Use volunteer opportunities to gain practical work, strengthen your portfolio, and build confidence before entering full-time applications.",
-    link: "Browse volunteer jobs",
-    date: "May 29, 2026",
-    targetSidebar: "discover",
-    targetCategory: "volunteer",
-  },
-];
+function formatAnnouncementDate(value) {
+  if (!value) return getTodayLongDate();
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return getTodayLongDate();
+
+  return date.toLocaleDateString("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function mapAnnouncementRecord(record) {
+  const title = record.title || "Untitled announcement";
+  const body = record.body || "";
+  const tag = String(record.tag || "").trim();
+  const label = String(record.label || "").trim();
+  const link = String(record.link_label || "").trim();
+
+  return {
+    id: record.id,
+    tag,
+    label,
+    title,
+    body,
+    link,
+    targetSidebar: record.target_page || "discover",
+    targetCategory: record.target_category || null,
+    date: formatAnnouncementDate(record.created_at),
+    bannerUrl: record.link_target || "",
+    isActive: record.is_active !== false,
+    startsAt: record.starts_at || "",
+    endsAt: record.ends_at || "",
+    displayOrder: Number(record.display_order ?? 0),
+  };
+}
 
 const categories = [
   { id: "jobs", label: "Jobs", icon: BriefcaseBusiness },
@@ -1049,53 +1037,6 @@ const progressCards = [
   },
 ];
 
-const roadmapBlueprint = [
-  {
-    id: 1,
-    label: "Now",
-    range: "Current",
-    status: "Complete",
-    statusClass: "completed",
-    title: "React & TypeScript Foundation",
-    nodeClass: "done",
-    skills: ["React", "TypeScript", "Git Workflow"],
-    actions: ["Refine component structure", "Practice state handling", "Document two strong projects"],
-  },
-  {
-    id: 2,
-    label: "Phase 1",
-    range: "Weeks 1-6",
-    status: "Active",
-    statusClass: "in-progress",
-    title: "Close Critical Skill Gaps",
-    nodeClass: "active",
-    skills: ["GraphQL", "PostgreSQL"],
-    actions: [
-      "Enroll: GraphQL Zero to Production",
-      "Enroll: PostgreSQL for Developers",
-      "Build a GraphQL API side project",
-    ],
-  },
-  {
-    id: 3,
-    label: "Phase 2",
-    range: "Weeks 7-14",
-    title: "Infrastructure & Architecture",
-    nodeClass: "future",
-    skills: ["System Design", "Deployment", "Observability"],
-    actions: ["Start cloud foundations", "Ship one deployable full-stack app", "Review system design basics weekly"],
-  },
-  {
-    id: 4,
-    label: "Target",
-    range: "Month 4+",
-    title: "Senior Full-Stack Engineer",
-    nodeClass: "future",
-    skills: ["Architecture", "Leadership", "Product Thinking"],
-    actions: ["Build a stronger portfolio story", "Lead one end-to-end project", "Prepare for technical interviews"],
-  },
-];
-
 const mentorshipCourses = [
   {
     id: 1,
@@ -1304,7 +1245,7 @@ const defaultState = {
   applicationsTab: "applied",
   expandedApplicationId: 1,
   progressTab: "courses",
-  expandedRoadmapId: 2,
+  expandedRoadmapId: "",
   profilePanelOpen: false,
   profilePanelTab: "info",
   selectedJobId: null,
@@ -1364,11 +1305,16 @@ const defaultState = {
     { id: 1, label: "Mentorship Enrollments", amount: "PHP 182,000", status: "Collected" },
     { id: 2, label: "Certification Partnerships", amount: "PHP 74,000", status: "Pending Payout" },
   ],
-  adminContent: [
-    { id: 1, title: "Homepage Announcement Banner", status: "Published" },
-    { id: 2, title: "Employer Help Center Article", status: "Draft" },
-    { id: 3, title: "Student OJT Application Guide", status: "Review" },
-  ],
+  announcements: [],
+  adminAnnouncements: [],
+  careerRoadmaps: [],
+  roadmapStatus: {
+    loading: false,
+    error: "",
+    updatedAt: "",
+    roadmapEngine: "",
+    lastGeneratedKey: "",
+  },
 };
 
 function isLegacyDemoState(savedState) {
@@ -1421,6 +1367,11 @@ function buildPersistedState(state) {
     profileExperience: state.profileExperience,
     profileCertificates: state.profileCertificates,
     volunteerActivities: state.volunteerActivities,
+    careerRoadmaps: state.careerRoadmaps,
+    roadmapStatus: {
+      ...state.roadmapStatus,
+      loading: false,
+    },
   };
 }
 
@@ -1563,6 +1514,17 @@ function App() {
   const [activeAnnouncement, setActiveAnnouncement] = useState(0);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "Applicant" });
   const [authFeedback, setAuthFeedback] = useState("");
+  const [announcementForm, setAnnouncementForm] = useState({
+    tag: "Update",
+    label: "Announcement",
+    title: "",
+    body: "",
+    link: "View update",
+    targetCategory: "",
+    expirationDate: "",
+    bannerName: "",
+    bannerUrl: "",
+  });
   const [experienceForm, setExperienceForm] = useState({ title: "", company: "", period: "", years: "" });
   const [certificateForm, setCertificateForm] = useState({ title: "", source: "", date: "", photoName: "", photoPreview: "" });
   const [volunteerForm, setVolunteerForm] = useState({ org: "", role: "", status: "Active", last: "" });
@@ -1585,6 +1547,7 @@ function App() {
     daysBeforeRenewal !== null &&
     daysBeforeRenewal >= 0 &&
     daysBeforeRenewal <= 7;
+  const announcementSlides = state.announcements;
 
 
   useEffect(() => {
@@ -1655,8 +1618,16 @@ function App() {
             renewalDate: "",
           },
           profile: guestProfile,
+          applications: [],
+          applicationStatusById: initialApplicationStatus,
+          careerRoadmaps: [],
+          expandedApplicationId: null,
+          expandedRoadmapId: "",
           profileCertificates: [],
           adminCertifications: [],
+          roadmapStatus: {
+            ...defaultState.roadmapStatus,
+          },
         }));
         return;
       }
@@ -1772,12 +1743,20 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (announcementSlides.length <= 1) return undefined;
+
     const intervalId = window.setInterval(() => {
       setActiveAnnouncement((current) => (current + 1) % announcementSlides.length);
     }, 3600);
 
     return () => window.clearInterval(intervalId);
-  }, []);
+  }, [announcementSlides.length]);
+
+  useEffect(() => {
+    if (activeAnnouncement >= announcementSlides.length && announcementSlides.length > 0) {
+      setActiveAnnouncement(0);
+    }
+  }, [activeAnnouncement, announcementSlides.length]);
 
   useEffect(() => {
     if (!hasSupabaseConfig) return;
@@ -1825,11 +1804,23 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!hasSupabaseConfig || !supabase) return undefined;
+
+    let cancelled = false;
+    loadAnnouncements(cancelled).catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!hasSupabaseConfig || !supabase || !isAdmin) return;
 
     let cancelled = false;
 
     loadAdminUsers(cancelled).catch(() => {});
+    loadAdminAnnouncements(cancelled).catch(() => {});
 
     return () => {
       cancelled = true;
@@ -1894,6 +1885,46 @@ function App() {
       supabase.removeChannel(channel);
     };
   }, [state.auth.accountEmail, state.auth.accountId, state.auth.isAuthenticated]);
+
+  useEffect(() => {
+    if (!hasSupabaseConfig || !supabase || !state.auth.isAuthenticated || !state.auth.accountId) return;
+
+    let cancelled = false;
+
+    supabase
+      .from("applications")
+      .select("job_id,status,applied_at,status_timeline")
+      .eq("applicant_id", state.auth.accountId)
+      .neq("status", "Withdrawn")
+      .order("applied_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled || error) return;
+
+        const rows = data ?? [];
+        const applications = rows.map((row) => row.job_id).filter(Boolean);
+        const applicationStatusById = rows.reduce(
+          (accumulator, row) => ({
+            ...accumulator,
+            [row.job_id]: mapApplicationRecordToState(row),
+          }),
+          {},
+        );
+
+        setState((current) => ({
+          ...current,
+          applications,
+          applicationStatusById,
+          expandedApplicationId:
+            current.expandedApplicationId && applications.includes(current.expandedApplicationId)
+              ? current.expandedApplicationId
+              : applications[0] ?? null,
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.auth.accountId, state.auth.isAuthenticated]);
 
   useEffect(() => {
     if (!hasSupabaseConfig || !supabase || !state.auth.accountId) return;
@@ -2059,6 +2090,10 @@ function App() {
   }, [isStudent, state.activeCategory]);
 
   useEffect(() => {
+    if (state.aiStatus.loadingJobs) return;
+    if (state.aiStatus.error) return;
+    if (listings.length === 0) return;
+
     const listingIds = new Set(listings.map((listing) => String(listing.id)));
 
     setState((current) => {
@@ -2067,12 +2102,20 @@ function App() {
       const selectedJobId = current.selectedJobId && listingIds.has(String(current.selectedJobId)) ? current.selectedJobId : null;
       const expandedApplicationId =
         current.expandedApplicationId && listingIds.has(String(current.expandedApplicationId)) ? current.expandedApplicationId : null;
+      const careerRoadmaps = current.careerRoadmaps.filter((item) => listingIds.has(String(item.job_id)));
+      const expandedRoadmapId =
+        current.expandedRoadmapId &&
+        careerRoadmaps.some((item) => (item.phases ?? []).some((phase) => `${item.job_id}:${phase.id}` === current.expandedRoadmapId))
+          ? current.expandedRoadmapId
+          : "";
 
       if (
         applications.length === current.applications.length &&
         saved.length === current.saved.length &&
         selectedJobId === current.selectedJobId &&
-        expandedApplicationId === current.expandedApplicationId
+        expandedApplicationId === current.expandedApplicationId &&
+        careerRoadmaps.length === current.careerRoadmaps.length &&
+        expandedRoadmapId === current.expandedRoadmapId
       ) {
         return current;
       }
@@ -2083,9 +2126,11 @@ function App() {
         saved,
         selectedJobId,
         expandedApplicationId,
+        careerRoadmaps,
+        expandedRoadmapId,
       };
     });
-  }, [listings]);
+  }, [listings, state.aiStatus.error, state.aiStatus.loadingJobs]);
 
   const counts = useMemo(
     () =>
@@ -2127,6 +2172,33 @@ function App() {
 
   const activeApplicationCards = state.applicationsTab === "applied" ? appliedCards : savedCards;
   const appliedCount = appliedCards.length;
+  const appliedCardMap = useMemo(() => new Map(appliedCards.map((card) => [String(card.id), card])), [appliedCards]);
+  const roadmapCandidateJobs = useMemo(
+    () => state.applications.slice(0, 3).map((jobId) => appliedCardMap.get(String(jobId))).filter(Boolean),
+    [appliedCardMap, state.applications],
+  );
+  const roadmapGenerationKey = useMemo(
+    () =>
+      JSON.stringify({
+        jobs: roadmapCandidateJobs.map((job) => ({
+          id: String(job.id),
+          title: job.title,
+          company: job.company,
+          skills: (job.requiredSkills ?? []).slice(0, 8),
+          score: job.score,
+        })),
+        profile: {
+          role: state.profile.role,
+          jobTitle: state.profile.jobTitle,
+          about: state.profile.about,
+          skills: [...(state.profile.skills ?? [])].sort(),
+          suggestedRoles: [...(state.profile.aiProfile?.suggested_roles ?? [])].sort(),
+          summary: state.profile.aiProfile?.summary ?? "",
+          strengths: [...(state.profile.aiProfile?.strengths ?? [])].sort(),
+        },
+      }),
+    [roadmapCandidateJobs, state.profile],
+  );
   const inProgressCount = appliedCards.filter((card) => ["Reviewed", "Shortlisted"].includes(card.status)).length;
   const interviewCount = appliedCards.filter((card) => card.status === "Interview").length;
   const visibleProgressCards = progressCards.filter((card) => card.type === state.progressTab);
@@ -2137,10 +2209,145 @@ function App() {
   const certsReady = `${progressCards.filter((card) => card.type === "prep" && ["Ready", "Completed"].includes(card.status)).length}/${
     progressCards.filter((card) => card.type === "prep").length
   }`;
-  const roadmapItems = roadmapBlueprint.map((item) => ({
-    ...item,
-    expanded: state.expandedRoadmapId === item.id,
+  const roadmapItems = state.careerRoadmaps.map((roadmap) => ({
+    ...roadmap,
+    phases: (roadmap.phases ?? []).map((phase) => ({
+      ...phase,
+      expanded: state.expandedRoadmapId === `${roadmap.job_id}:${phase.id}`,
+    })),
   }));
+  useEffect(() => {
+    if (isAdmin || !state.auth.isAuthenticated || !hasActiveSubscription) return;
+
+    const activeRoadmapIds = new Set(roadmapCandidateJobs.map((job) => String(job.id)));
+
+    if (roadmapCandidateJobs.length === 0) {
+      setState((current) => {
+        const alreadyCleared =
+          current.expandedRoadmapId === "" &&
+          current.careerRoadmaps.length === 0 &&
+          !current.roadmapStatus.loading &&
+          current.roadmapStatus.error === "" &&
+          current.roadmapStatus.updatedAt === "" &&
+          current.roadmapStatus.roadmapEngine === "" &&
+          current.roadmapStatus.lastGeneratedKey === "";
+
+        if (alreadyCleared) {
+          return current;
+        }
+
+        return {
+          ...current,
+          expandedRoadmapId: "",
+          careerRoadmaps: [],
+          roadmapStatus: {
+            ...current.roadmapStatus,
+            loading: false,
+            error: "",
+            updatedAt: "",
+            roadmapEngine: "",
+            lastGeneratedKey: "",
+          },
+        };
+      });
+      return;
+    }
+
+    if (state.roadmapStatus.lastGeneratedKey === roadmapGenerationKey && state.roadmapStatus.loading) {
+      return;
+    }
+
+    if (
+      state.roadmapStatus.lastGeneratedKey === roadmapGenerationKey &&
+      state.careerRoadmaps.length > 0 &&
+      state.careerRoadmaps.every((item) => activeRoadmapIds.has(String(item.job_id)))
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setState((current) => ({
+      ...current,
+      careerRoadmaps: current.careerRoadmaps.filter((item) => activeRoadmapIds.has(String(item.job_id))),
+      roadmapStatus: {
+        ...current.roadmapStatus,
+        loading: true,
+        error: "",
+        lastGeneratedKey: roadmapGenerationKey,
+      },
+    }));
+
+    fetchCareerRoadmaps({
+      profile: {
+        role: state.profile.role,
+        fullName: state.profile.fullName,
+        jobTitle: state.profile.jobTitle,
+        about: state.profile.about,
+        location: state.profile.location,
+        skills: state.profile.skills ?? [],
+      },
+      resumeProfile: state.profile.aiProfile ?? {},
+      jobs: roadmapCandidateJobs.map((job) => ({
+        id: job.id,
+        title: job.title,
+        company_name: job.company,
+        category: job.category,
+        description: job.sourceDescription || job.overview,
+        responsibilities: job.sourceResponsibilities ?? job.responsibilities ?? [],
+        requiredSkills: job.requiredSkills ?? [],
+        matchedSkills: job.matchedSkills ?? [],
+        gaps: job.gaps ?? [],
+        matchScore: job.score,
+      })),
+    })
+      .then((result) => {
+        if (cancelled) return;
+
+        setState((current) => ({
+          ...current,
+          expandedRoadmapId:
+            current.expandedRoadmapId &&
+            (result.roadmaps ?? []).some((roadmap) =>
+              (roadmap.phases ?? []).some((phase) => `${roadmap.job_id}:${phase.id}` === current.expandedRoadmapId),
+            )
+              ? current.expandedRoadmapId
+              : "",
+          careerRoadmaps: result.roadmaps ?? [],
+          roadmapStatus: {
+            loading: false,
+            error: result.usedFallback && result.fallbackError ? `Roadmap used local fallback: ${result.fallbackError}` : "",
+            updatedAt: result.updatedAt || new Date().toISOString(),
+            roadmapEngine: result.roadmapEngine || (result.usedFallback ? "local-fallback" : ""),
+            lastGeneratedKey: roadmapGenerationKey,
+          },
+        }));
+      })
+      .catch((error) => {
+        if (cancelled) return;
+
+        setState((current) => ({
+          ...current,
+          roadmapStatus: {
+            ...current.roadmapStatus,
+            loading: false,
+            error: error.message || "Failed to generate career roadmaps.",
+          },
+        }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    hasActiveSubscription,
+    isAdmin,
+    roadmapCandidateJobs,
+    roadmapGenerationKey,
+    state.auth.isAuthenticated,
+    state.roadmapStatus.lastGeneratedKey,
+    state.roadmapStatus.loading,
+  ]);
   const filteredCertifications = certifications.filter(
     (item) => state.certificationFilter === "All" || item.track === state.certificationFilter,
   );
@@ -2208,7 +2415,7 @@ function App() {
       state.adminCertifications.filter((item) => item.status === "Pending").length +
       state.adminMentors.filter((item) => item.status === "Pending").length +
       state.adminEmployers.filter((item) => item.status === "Pending").length,
-    liveContent: state.adminContent.filter((item) => item.status === "Published").length,
+    liveContent: state.adminAnnouncements.filter((item) => item.isActive).length,
   };
 
   useEffect(() => {
@@ -2263,6 +2470,32 @@ function App() {
     setPasswordForm((current) => ({ ...current, [field]: value }));
   }
 
+  async function persistApplicationRecord(jobId, patch = {}) {
+    if (!hasSupabaseConfig || !supabase || !state.auth.isAuthenticated || !state.auth.accountId) return;
+
+    const currentEntry = state.applicationStatusById[jobId] ?? createApplicationEntry();
+    const listing = listings.find((item) => String(item.id) === String(jobId));
+
+    const payload = {
+      applicant_id: state.auth.accountId,
+      job_id: jobId,
+      status: patch.status || currentEntry.status || "Applied",
+      applied_at: patch.applied_at || new Date().toISOString(),
+      status_timeline: patch.status_timeline || currentEntry.stageDates || createApplicationEntry().stageDates,
+      match_score: Number(patch.match_score ?? listing?.score ?? 0),
+      matched_skills: patch.matched_skills || listing?.matchedSkills || [],
+      skill_gaps: patch.skill_gaps || listing?.gaps || [],
+    };
+
+    const { error } = await supabase.from("applications").upsert(payload, {
+      onConflict: "job_id,applicant_id",
+    });
+
+    if (error) {
+      throw new Error(error.message || "Failed to save the application.");
+    }
+  }
+
   async function handleSuspendedAccount(email = "") {
     if (hasSupabaseConfig && supabase) {
       await supabase.auth.signOut();
@@ -2292,47 +2525,103 @@ function App() {
   async function loadAdminUsers(cancelled = false) {
     if (!hasSupabaseConfig || !supabase) return;
 
-    let users = [];
-
     try {
       const { data, error } = await supabase.functions.invoke("admin-list-users");
 
       if (error) {
-        throw new Error(error.message || "Unable to load the registered users.");
+        let message = error.message || "Unable to load the registered users.";
+
+        if (error.context instanceof Response) {
+          try {
+            const responseBody = await error.context.text();
+            if (responseBody) {
+              try {
+                const parsed = JSON.parse(responseBody);
+                message = parsed?.error || parsed?.message || responseBody;
+              } catch {
+                message = responseBody;
+              }
+            }
+          } catch {
+            // Keep the generic message if the response body cannot be read.
+          }
+        }
+
+        throw new Error(message);
       }
 
       if (data?.error) {
         throw new Error(data.error || "Unable to load the registered users.");
       }
 
-      users = Array.isArray(data?.users) ? data.users : [];
-    } catch (functionError) {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, role, status, created_at, email, username, location, job_title, about, skills")
-        .order("created_at", { ascending: false });
-
       if (cancelled) return;
-
-      if (error) {
-        setAuthFeedback(
-          functionError instanceof Error
-            ? `${functionError.message} Fallback profile loading also failed: ${error.message || "Unable to load the registered users."}`
-            : error.message || "Unable to load the registered users.",
-        );
-        return;
-      }
-
-      users = data ?? [];
+      setState((current) => ({
+        ...current,
+        adminUsers: (Array.isArray(data?.users) ? data.users : []).map(mapAdminUserRecord),
+      }));
+      setAuthFeedback("");
+    } catch (functionError) {
+      if (cancelled) return;
+      setAuthFeedback(functionError instanceof Error ? functionError.message : "Unable to load the registered users.");
     }
+  }
+
+  async function loadAnnouncements(cancelled = false) {
+    if (!hasSupabaseConfig || !supabase) return;
+
+    const { data, error } = await supabase
+      .from("announcements")
+      .select("*")
+      .eq("is_active", true)
+      .order("display_order", { ascending: true })
+      .order("created_at", { ascending: false });
 
     if (cancelled) return;
 
+    if (error) {
+      setAuthFeedback(error.message || "Unable to load announcements.");
+      return;
+    }
+
+    const now = Date.now();
+    const activeAnnouncements = (data ?? []).filter((item) => {
+      const startsAt = item.starts_at ? new Date(item.starts_at).getTime() : null;
+      const endsAt = item.ends_at ? new Date(item.ends_at).getTime() : null;
+
+      if (startsAt && !Number.isNaN(startsAt) && startsAt > now) return false;
+      if (endsAt && !Number.isNaN(endsAt) && endsAt < now) return false;
+      return true;
+    });
+
     setState((current) => ({
       ...current,
-      adminUsers: users.map(mapAdminUserRecord),
+      announcements: activeAnnouncements.map(mapAnnouncementRecord),
     }));
-    setAuthFeedback("");
+  }
+
+  async function loadAdminAnnouncements(cancelled = false) {
+    if (!hasSupabaseConfig || !supabase || !isAdmin) return;
+
+    const { data, error } = await supabase.functions.invoke("admin-manage-announcements", {
+      body: { action: "list" },
+    });
+
+    if (cancelled) return;
+
+    if (error) {
+      setAuthFeedback(error.message || "Unable to load admin announcements.");
+      return;
+    }
+
+    if (data?.error) {
+      setAuthFeedback(data.error || "Unable to load admin announcements.");
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      adminAnnouncements: (Array.isArray(data?.announcements) ? data.announcements : []).map(mapAnnouncementRecord),
+    }));
   }
 
   async function handleProfilePhotoChange(event) {
@@ -2397,6 +2686,126 @@ function App() {
     } finally {
       event.target.value = "";
     }
+  }
+
+  async function handleAnnouncementBannerChange(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setAuthFeedback("Upload an image file for the announcement banner.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setAuthFeedback("Announcement banners must be 2 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      const bannerUrl = await readFileAsDataUrl(file);
+      setAnnouncementForm((current) => ({
+        ...current,
+        bannerName: file.name,
+        bannerUrl,
+      }));
+      setAuthFeedback("");
+    } catch (error) {
+      setAuthFeedback(error instanceof Error ? error.message : "Unable to load the announcement banner.");
+    } finally {
+      event.target.value = "";
+    }
+  }
+
+  async function createAnnouncement() {
+    if (!isAdmin) {
+      setAuthFeedback("Only admins can publish announcements.");
+      return;
+    }
+
+    if (!hasSupabaseConfig || !supabase) {
+      setAuthFeedback("Supabase is not configured.");
+      return;
+    }
+
+    if (!announcementForm.title.trim() || !announcementForm.body.trim()) {
+      setAuthFeedback("Announcement title and message are required.");
+      return;
+    }
+
+    const payload = {
+      tag: announcementForm.tag.trim() || null,
+      label: announcementForm.label.trim() || null,
+      title: announcementForm.title.trim(),
+      body: announcementForm.body.trim(),
+      link_label: announcementForm.link.trim() || null,
+      target_page: "discover",
+      target_category: announcementForm.targetCategory || null,
+      is_active: true,
+      display_order: state.adminAnnouncements.length,
+      ends_at: announcementForm.expirationDate ? new Date(`${announcementForm.expirationDate}T23:59:59`).toISOString() : null,
+      link_target: announcementForm.bannerUrl || null,
+    };
+
+    const { data, error } = await supabase.functions.invoke("admin-manage-announcements", {
+      body: {
+        action: "create",
+        payload,
+      },
+    });
+
+    if (error) {
+      setAuthFeedback(error.message || "Unable to create the announcement.");
+      return;
+    }
+
+    if (data?.error) {
+      setAuthFeedback(data.error || "Unable to create the announcement.");
+      return;
+    }
+
+    setAnnouncementForm({
+      tag: "Update",
+      label: "Announcement",
+      title: "",
+      body: "",
+      link: "View update",
+      targetCategory: "",
+      expirationDate: "",
+      bannerName: "",
+      bannerUrl: "",
+    });
+    setAuthFeedback("Announcement published successfully.");
+    await loadAnnouncements();
+    await loadAdminAnnouncements();
+  }
+
+  async function toggleAnnouncementActive(announcementId, nextActive) {
+    if (!isAdmin || !hasSupabaseConfig || !supabase) return;
+
+    const { data, error } = await supabase.functions.invoke("admin-manage-announcements", {
+      body: {
+        action: "toggle",
+        announcementId,
+        nextActive,
+      },
+    });
+
+    if (error) {
+      setAuthFeedback(error.message || "Unable to update the announcement.");
+      return;
+    }
+
+    if (data?.error) {
+      setAuthFeedback(data.error || "Unable to update the announcement.");
+      return;
+    }
+
+    setAuthFeedback(nextActive ? "Announcement published successfully." : "Announcement removed from the carousel.");
+    await loadAnnouncements();
+    await loadAdminAnnouncements();
   }
 
   async function refreshRecommendations(profileOverride, aiProfileOverride, options = {}) {
@@ -2600,6 +3009,7 @@ function App() {
     const listing = typeof jobOrId === "object" ? jobOrId : listings.find((item) => item.id === jobId);
     const externalUrl = listing?.sourceUrl;
     const shouldAnimateModalClose = state.selectedJobId === jobId;
+    const optimisticEntry = createApplicationEntry("Applied");
 
     if (!state.auth.isAuthenticated) {
       openAuthModal("signup");
@@ -2622,9 +3032,18 @@ function App() {
         ? current.applicationStatusById
         : {
             ...current.applicationStatusById,
-            [jobId]: createApplicationEntry(),
+            [jobId]: optimisticEntry,
           },
     }));
+
+    persistApplicationRecord(jobId, {
+      status: "Applied",
+      applied_at: new Date().toISOString(),
+      status_timeline: optimisticEntry.stageDates,
+      match_score: Number(listing?.score ?? 0),
+      matched_skills: listing?.matchedSkills ?? [],
+      skill_gaps: listing?.gaps ?? [],
+    }).catch(() => {});
 
     if (externalUrl) {
       window.open(externalUrl, "_blank", "noopener,noreferrer");
@@ -2725,13 +3144,64 @@ function App() {
         },
       };
     });
+
+    const currentEntry = state.applicationStatusById[jobId] ?? createApplicationEntry();
+    const currentIndex = applicationStages.indexOf(currentEntry.status);
+    const nextIndex = Math.min(currentIndex + 1, applicationStages.length - 1);
+    const stageDates = [...currentEntry.stageDates];
+
+    if (!stageDates[nextIndex]) {
+      stageDates[nextIndex] = getTodayShortDate();
+    }
+
+    persistApplicationRecord(jobId, {
+      status: applicationStages[nextIndex],
+      status_timeline: stageDates,
+    }).catch(() => {});
   }
 
   function withdrawApplication(jobId) {
+    setState((current) => {
+      const nextApplicationStatusById = { ...current.applicationStatusById };
+      delete nextApplicationStatusById[jobId];
+
+      return {
+        ...current,
+        applications: current.applications.filter((id) => id !== jobId),
+        applicationStatusById: nextApplicationStatusById,
+        expandedApplicationId: current.expandedApplicationId === jobId ? null : current.expandedApplicationId,
+        careerRoadmaps: current.careerRoadmaps.filter((item) => String(item.job_id) !== String(jobId)),
+        expandedRoadmapId: String(current.expandedRoadmapId || "").startsWith(`${jobId}:`) ? "" : current.expandedRoadmapId,
+        roadmapStatus:
+          current.applications.filter((id) => id !== jobId).length === 0
+            ? {
+                ...current.roadmapStatus,
+                loading: false,
+                error: "",
+                updatedAt: "",
+                roadmapEngine: "",
+                lastGeneratedKey: "",
+              }
+            : current.roadmapStatus,
+      };
+    });
+
+    const currentEntry = state.applicationStatusById[jobId] ?? createApplicationEntry();
+    persistApplicationRecord(jobId, {
+      status: "Withdrawn",
+      status_timeline: currentEntry.stageDates,
+    }).catch(() => {});
+  }
+
+  function retryCareerRoadmaps() {
     setState((current) => ({
       ...current,
-      applications: current.applications.filter((id) => id !== jobId),
-      expandedApplicationId: current.expandedApplicationId === jobId ? null : current.expandedApplicationId,
+      roadmapStatus: {
+        ...current.roadmapStatus,
+        loading: false,
+        error: "",
+        lastGeneratedKey: "",
+      },
     }));
   }
 
@@ -4102,43 +4572,101 @@ function App() {
               </div>
             </div>
 
-            <div className="summary-grid cms-grid">
-              <article className="summary-card">
-                <div className="listing-avatar violet">J</div>
-                <strong>Job Listings</strong>
-                <span>11 items</span>
-              </article>
-              <article className="summary-card">
-                <div className="listing-avatar violet">M</div>
-                <strong>Mentor Courses</strong>
-                <span>4 items</span>
-              </article>
-              <article className="summary-card">
-                <div className="listing-avatar violet">C</div>
-                <strong>Certifications</strong>
-                <span>6 items</span>
-              </article>
-              <article className="summary-card">
-                <div className="listing-avatar violet">A</div>
-                <strong>Announcements</strong>
-                <span>3 items</span>
-              </article>
-            </div>
+            <article className="progress-card announcement-composer-card">
+              <div className="announcement-composer-head">
+                <div>
+                  <span className="section-kicker">HOMEPAGE ANNOUNCEMENT</span>
+                  <h3>Create Announcement</h3>
+                  <p>Publish a banner-backed announcement to the Discover carousel with an expiration date and destination.</p>
+                </div>
+                <button className="profile-primary-button" type="button" onClick={() => createAnnouncement().catch(() => {})}>
+                  Publish Announcement
+                </button>
+              </div>
+
+              {authFeedback ? <p className="auth-feedback">{authFeedback}</p> : null}
+
+              <div className="announcement-composer-layout">
+                <div className="announcement-main-fields">
+                  <div className="announcement-field-grid">
+                    <label className="auth-field announcement-field">
+                      <span>Title</span>
+                      <input value={announcementForm.title} onChange={(event) => setAnnouncementForm((current) => ({ ...current, title: event.target.value }))} placeholder="Announcement headline" />
+                    </label>
+                    <label className="auth-field announcement-field">
+                      <span>Button Label</span>
+                      <input value={announcementForm.link} onChange={(event) => setAnnouncementForm((current) => ({ ...current, link: event.target.value }))} placeholder="View update" />
+                    </label>
+                  </div>
+
+                  <label className="auth-field announcement-field announcement-body-field">
+                    <span>Announcement</span>
+                    <textarea value={announcementForm.body} onChange={(event) => setAnnouncementForm((current) => ({ ...current, body: event.target.value }))} rows={6} placeholder="Write the announcement message here..." />
+                  </label>
+                </div>
+
+                <div className="announcement-side-fields">
+                  <div className="announcement-field-grid">
+                    <label className="auth-field announcement-field">
+                      <span>Tag</span>
+                      <input value={announcementForm.tag} onChange={(event) => setAnnouncementForm((current) => ({ ...current, tag: event.target.value }))} placeholder="Update" />
+                    </label>
+                    <label className="auth-field announcement-field">
+                      <span>Label</span>
+                      <input value={announcementForm.label} onChange={(event) => setAnnouncementForm((current) => ({ ...current, label: event.target.value }))} placeholder="Announcement" />
+                    </label>
+                    <label className="auth-field announcement-field">
+                      <span>Target Category</span>
+                      <select value={announcementForm.targetCategory} onChange={(event) => setAnnouncementForm((current) => ({ ...current, targetCategory: event.target.value }))}>
+                        <option value="">None</option>
+                        <option value="jobs">Jobs</option>
+                        <option value="internships">Internship</option>
+                        <option value="volunteer">Volunteer</option>
+                      </select>
+                    </label>
+                    <label className="auth-field announcement-field">
+                      <span>Expires On</span>
+                      <input type="date" value={announcementForm.expirationDate} onChange={(event) => setAnnouncementForm((current) => ({ ...current, expirationDate: event.target.value }))} />
+                    </label>
+                  </div>
+
+                  <label className="auth-field announcement-field announcement-banner-upload">
+                    <span>Banner / Photo</span>
+                    <input type="file" accept="image/*" onChange={handleAnnouncementBannerChange} />
+                    <small>{announcementForm.bannerName || "Upload a banner image for the carousel card."}</small>
+                  </label>
+
+                  {announcementForm.bannerUrl ? (
+                    <div className="announcement-banner-preview-wrap">
+                      <img src={announcementForm.bannerUrl} alt="Announcement banner preview" className="announcement-banner-preview" />
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </article>
 
             <article className="progress-card">
-              <h3>Recent Content Updates</h3>
+              <h3>Announcement Manager</h3>
               <div className="progress-card-list">
-                {state.adminContent.map((item) => (
-                  <div key={item.id} className="profile-mini-card">
-                    <div>
+                {state.adminAnnouncements.map((item) => (
+                  <div key={item.id} className="profile-mini-card announcement-manager-card">
+                    {item.bannerUrl ? <img src={item.bannerUrl} alt={item.title} className="announcement-manager-thumb" /> : null}
+                    <div className="announcement-manager-copy">
                       <strong>{item.title}</strong>
-                      <p>{item.status}</p>
+                      <p>{item.body}</p>
+                      <span>{item.isActive ? "Published" : "Inactive"}{item.endsAt ? ` • Expires ${formatAnnouncementDate(item.endsAt)}` : ""}</span>
                     </div>
-                    <button className="ghost-action" type="button" onClick={() => updateAdminCollection("adminContent", item.id, "status", "Published")}>
-                      Manage
+                    <button className="ghost-action" type="button" onClick={() => toggleAnnouncementActive(item.id, !item.isActive).catch(() => {})}>
+                      {item.isActive ? "Deactivate" : "Publish"}
                     </button>
                   </div>
                 ))}
+                {state.adminAnnouncements.length === 0 ? (
+                  <div className="empty-feed">
+                    <h3>No announcements yet</h3>
+                    <p>Create the first live homepage announcement here.</p>
+                  </div>
+                ) : null}
               </div>
             </article>
           </section>
@@ -4146,6 +4674,7 @@ function App() {
 
         {!isAdmin && state.activeSidebar === "discover" && (
           <>
+            {announcementSlides.length > 0 ? (
             <section className="announcement-section">
               <div className="section-label">
                 <ShieldCheck size={13} />
@@ -4160,20 +4689,28 @@ function App() {
                 >
                   {announcementSlides.map((slide) => (
                     <article key={slide.id} className="announcement-card">
-                      <div className="announcement-icon">
-                        <ShieldCheck size={15} />
-                      </div>
-                      <div className="announcement-content">
-                        <div className="announcement-pills">
-                          <span>{slide.tag}</span>
-                          <span>{slide.label}</span>
+                      {slide.bannerUrl ? (
+                        <img src={slide.bannerUrl} alt={slide.title} className="announcement-banner" />
+                      ) : (
+                        <div className="announcement-icon">
+                          <ShieldCheck size={15} />
                         </div>
+                      )}
+                      <div className="announcement-content">
+                        {(slide.tag || slide.label) ? (
+                          <div className="announcement-pills">
+                            {slide.tag ? <span>{slide.tag}</span> : null}
+                            {slide.label ? <span>{slide.label}</span> : null}
+                          </div>
+                        ) : null}
                         <h2>{slide.title}</h2>
                         <p>{slide.body}</p>
-                        <button className="announcement-link" type="button" onClick={() => handleAnnouncementAction(slide)}>
-                          {slide.link}
-                          <ArrowRight size={13} />
-                        </button>
+                        {slide.link ? (
+                          <button className="announcement-link" type="button" onClick={() => handleAnnouncementAction(slide)}>
+                            {slide.link}
+                            <ArrowRight size={13} />
+                          </button>
+                        ) : null}
                       </div>
                       <time>{slide.date}</time>
                     </article>
@@ -4193,16 +4730,20 @@ function App() {
                 ))}
               </div>
             </section>
+            ) : null}
 
             <section className="discover-section">
               <article className="ai-studio-card">
                 <div className="ai-studio-head">
-                  <div>
-                    <span className="section-kicker">AI MATCH STUDIO</span>
-                    <h3>Resume-aware job ranking</h3>
-                    <p>
-                      Upload your resume once, then let Gemini act as the judge while the live similarity engine scores every job in the database based on your skills, role fit, and the gaps worth improving.
-                    </p>
+                  <div className="ai-studio-status ai-studio-status-inline">
+                    <span>{hasSupabaseConfig ? "Live Supabase connected" : "Supabase not configured"}</span>
+                    <span>{state.liveJobs.length} live jobs loaded</span>
+                    <span>
+                      {state.aiStatus.recommendationModel === "gemini-embedding-001"
+                        ? `Gemini-assisted top ${state.aiStatus.semanticCandidates} jobs`
+                        : "Weighted fallback ranking"}
+                    </span>
+                    <span>{state.aiStatus.updatedAt ? `Last updated ${state.aiStatus.updatedAt}` : "Last updated not yet available"}</span>
                   </div>
                   <button
                     className="profile-primary-button small ai-refresh-button"
@@ -4214,38 +4755,7 @@ function App() {
                   </button>
                 </div>
 
-                <div className="ai-studio-status">
-                  <span>{hasSupabaseConfig ? "Live Supabase connected" : "Supabase not configured"}</span>
-                  <span>{state.liveJobs.length} live jobs loaded</span>
-                  <span>{rankedListings.length} ranked roles</span>
-                  <span>
-                    {state.aiStatus.recommendationModel === "gemini-embedding-001"
-                      ? `Gemini-assisted top ${state.aiStatus.semanticCandidates} jobs`
-                      : "Weighted fallback ranking"}
-                  </span>
-                  <span>{state.aiStatus.updatedAt ? `Updated ${state.aiStatus.updatedAt}` : "Awaiting resume analysis"}</span>
-                </div>
-
                 {state.aiStatus.error && <p className="ai-error-message">{state.aiStatus.error}</p>}
-
-                {topRecommendations.length > 0 ? (
-                  <div className="ai-recommendation-row">
-                    {topRecommendations.map((item) => (
-                      <button
-                        key={item.id}
-                        className="ai-recommendation-pill"
-                        type="button"
-                        onClick={() => openJobDetails(item.id)}
-                      >
-                        <strong>{item.title}</strong>
-                        <span>{item.company}</span>
-                        <em>{item.score} match</em>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="ai-empty-note">Upload a resume from your profile panel to rank all live jobs by similarity and surface clearer skill-gap reasons.</p>
-                )}
               </article>
 
               <label className="listing-search" htmlFor="listing-search">
@@ -4621,86 +5131,139 @@ function App() {
             <div className="applications-head">
               <div>
                 <h1>Career Roadmap</h1>
-                <p>Your personalised path to Senior Full-Stack Engineer.</p>
+                <p>Gemini builds roadmaps for your first three active applications using your profile and resume context.</p>
               </div>
             </div>
 
             <div className="roadmap-meta">
-              <span className="status-badge ready">Phase 1 Active</span>
-              <span>Est. completion: Oct 2026</span>
+              <span className="status-badge ready">{roadmapCandidateJobs.length}/3 tracked applications</span>
+              <span>{state.roadmapStatus.roadmapEngine === "local-fallback" ? "Local fallback roadmap" : "Gemini-assisted roadmap"}</span>
+              <span>
+                {state.roadmapStatus.updatedAt ? `Updated ${getTodayLongDateFromValue(state.roadmapStatus.updatedAt)}` : "Waiting for roadmap generation"}
+              </span>
             </div>
 
-            <div className="roadmap-timeline">
-              {roadmapItems.map((item, index) => (
-                <div key={item.id} className="roadmap-row">
-                  <div className="timeline-node-wrap">
-                    <div className={`timeline-node ${item.nodeClass}`}>{item.nodeClass === "done" ? <BadgeCheck size={13} /> : null}</div>
-                    {index < roadmapItems.length - 1 && <div className={`timeline-line ${item.nodeClass}`} />}
+            {state.roadmapStatus.error ? <p className="form-feedback">{state.roadmapStatus.error}</p> : null}
+
+            {state.roadmapStatus.loading && roadmapItems.length === 0 ? (
+              <div className="profile-empty-card roadmap-empty-card">
+                <strong>Generating your roadmap...</strong>
+                <p>This can take a few seconds while Gemini reviews your applied jobs and profile.</p>
+              </div>
+            ) : null}
+
+            {!state.roadmapStatus.loading && roadmapCandidateJobs.length === 0 ? (
+              <div className="profile-empty-card roadmap-empty-card">
+                Apply to up to three jobs from Discover to generate personalized roadmaps here. Withdrawing an application will remove its roadmap automatically.
+              </div>
+            ) : null}
+
+            {!state.roadmapStatus.loading && roadmapCandidateJobs.length > 0 && roadmapItems.length === 0 ? (
+              <div className="profile-empty-card roadmap-empty-card">
+                <strong>Roadmap generation failed.</strong>
+                <p>{state.roadmapStatus.error || "No roadmap could be generated for your current applied jobs."}</p>
+                <button className="profile-dashed-button roadmap-retry-button" type="button" onClick={retryCareerRoadmaps}>
+                  Try Again
+                </button>
+              </div>
+            ) : null}
+
+            {roadmapItems.map((roadmap) => (
+              <section key={roadmap.job_id} className="roadmap-job-group">
+                <div className="roadmap-job-head">
+                  <div>
+                    <h2>{roadmap.title}</h2>
+                    <p>{roadmap.company_name || "External employer"}</p>
                   </div>
-
-                  <article className={`roadmap-card interactive-card ${item.nodeClass}`} onClick={() => toggleRoadmapItem(item.id)}>
-                    <div className="roadmap-card-top">
-                      <div>
-                        <div className="roadmap-labels">
-                          <span className={`roadmap-label ${item.nodeClass}`}>{item.label}</span>
-                          <span>{item.range}</span>
-                          {item.status ? <span className={`status-badge ${item.statusClass}`}>{item.status}</span> : null}
-                        </div>
-                        <h3>{item.title}</h3>
-                      </div>
-                      <button
-                        className="expand-button"
-                        type="button"
-                        aria-label="Toggle roadmap step"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          toggleRoadmapItem(item.id);
-                        }}
-                      >
-                        {item.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                      </button>
-                    </div>
-
-                    {item.expanded && (
-                      <div className="roadmap-body roadmap-phase-appear">
-                        <div className="roadmap-section-block">
-                          <p>Skills</p>
-                          <div className="progress-tags">
-                            {item.skills.map((skill) => (
-                              <span key={skill}>{skill}</span>
-                            ))}
-                          </div>
-                        </div>
-
-                        <div className="roadmap-section-block">
-                          <p>Actions</p>
-                          <div className="roadmap-actions">
-                            {item.actions.map((action) => (
-                              <div key={action} className="roadmap-action">
-                                <ArrowRight size={12} />
-                                <span>{action}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        <button
-                          className="roadmap-cta"
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            patchState({ activeSidebar: "mentorship" });
-                          }}
-                        >
-                          <BookOpen size={14} />
-                          View Recommended Courses
-                        </button>
-                      </div>
-                    )}
-                  </article>
+                  <div className="roadmap-job-meta">
+                    <span>{roadmap.estimated_timeline || "6-10 weeks"}</span>
+                    <span>{roadmap.target_role || state.profile.jobTitle || state.profile.aiProfile?.suggested_roles?.[0] || "Target role"}</span>
+                  </div>
                 </div>
-              ))}
-            </div>
+
+                {roadmap.fit_summary ? <p className="roadmap-fit-summary">{roadmap.fit_summary}</p> : null}
+
+                {roadmap.focus_skills?.length ? (
+                  <div className="progress-tags roadmap-focus-tags">
+                    {roadmap.focus_skills.map((skill) => (
+                      <span key={skill}>{skill}</span>
+                    ))}
+                  </div>
+                ) : null}
+
+                <div className="roadmap-timeline">
+                  {roadmap.phases.map((item, index) => (
+                    <div key={`${roadmap.job_id}:${item.id}`} className="roadmap-row">
+                      <div className="timeline-node-wrap">
+                        <div className={`timeline-node ${item.nodeClass}`}>{item.nodeClass === "done" ? <BadgeCheck size={13} /> : null}</div>
+                        {index < roadmap.phases.length - 1 && <div className={`timeline-line ${item.nodeClass}`} />}
+                      </div>
+
+                      <article className={`roadmap-card interactive-card ${item.nodeClass}`} onClick={() => toggleRoadmapItem(`${roadmap.job_id}:${item.id}`)}>
+                        <div className="roadmap-card-top">
+                          <div>
+                            <div className="roadmap-labels">
+                              <span className={`roadmap-label ${item.nodeClass}`}>{item.label}</span>
+                              <span>{item.range}</span>
+                              {item.status ? <span className={`status-badge ${item.statusClass}`}>{item.status}</span> : null}
+                            </div>
+                            <h3>{item.title}</h3>
+                          </div>
+                          <button
+                            className="expand-button"
+                            type="button"
+                            aria-label="Toggle roadmap step"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toggleRoadmapItem(`${roadmap.job_id}:${item.id}`);
+                            }}
+                          >
+                            {item.expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                        </div>
+
+                        {item.expanded && (
+                          <div className="roadmap-body roadmap-phase-appear">
+                            <div className="roadmap-section-block">
+                              <p>Skills</p>
+                              <div className="progress-tags">
+                                {item.skills.map((skill) => (
+                                  <span key={skill}>{skill}</span>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div className="roadmap-section-block">
+                              <p>Actions</p>
+                              <div className="roadmap-actions">
+                                {item.actions.map((action) => (
+                                  <div key={action} className="roadmap-action">
+                                    <ArrowRight size={12} />
+                                    <span>{action}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            <button
+                              className="roadmap-cta"
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                patchState({ activeSidebar: "mentorship" });
+                              }}
+                            >
+                              <BookOpen size={14} />
+                              View Recommended Courses
+                            </button>
+                          </div>
+                        )}
+                      </article>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            ))}
           </section>
         )}
 
@@ -6002,6 +6565,23 @@ function createApplicationEntry(status = "Applied") {
     status,
     appliedDate: getTodayLongDate(),
     stageDates,
+  };
+}
+
+function normalizeApplicationStageDates(statusTimeline, status = "Applied") {
+  if (Array.isArray(statusTimeline) && statusTimeline.length === applicationStages.length) {
+    return applicationStages.map((_, index) => String(statusTimeline[index] || ""));
+  }
+
+  return createApplicationEntry(status).stageDates;
+}
+
+function mapApplicationRecordToState(record) {
+  const status = record?.status || "Applied";
+  return {
+    status,
+    appliedDate: record?.applied_at ? getTodayLongDateFromValue(record.applied_at) : getTodayLongDate(),
+    stageDates: normalizeApplicationStageDates(record?.status_timeline, status),
   };
 }
 
