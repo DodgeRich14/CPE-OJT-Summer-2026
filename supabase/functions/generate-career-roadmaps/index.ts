@@ -6,6 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const GEMINI_MODEL = "gemini-2.5-flash";
+
 const roadmapResponseSchema = {
   type: "OBJECT",
   properties: {
@@ -176,7 +178,7 @@ Deno.serve(async (request) => {
       });
     }
 
-    const apiKey = Deno.env.get("GEMINI_API_KEY");
+    const apiKey = Deno.env.get("ROADMAP_GEMINI_API_KEY");
     if (!apiKey) {
       return jsonResponse({
         success: true,
@@ -186,7 +188,7 @@ Deno.serve(async (request) => {
         })),
         roadmapEngine: "local-fallback",
         usedFallback: true,
-        fallbackError: "GEMINI_API_KEY is missing in Supabase secrets.",
+        fallbackError: "ROADMAP_GEMINI_API_KEY is missing in Supabase secrets.",
         updatedAt: new Date().toISOString(),
       });
     }
@@ -232,28 +234,27 @@ Deno.serve(async (request) => {
     ].join("\n");
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: prompt }],
-            },
-          ],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 4096,
-            responseMimeType: "application/json",
-            responseSchema: roadmapResponseSchema,
-          },
-        }),
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
       },
-    );
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [{ text: prompt }],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.2,
+          maxOutputTokens: 4096,
+          responseMimeType: "application/json",
+          responseSchema: roadmapResponseSchema,
+        },
+      }),
+    });
 
     if (!response.ok) {
       const text = await response.text();
@@ -284,7 +285,7 @@ Deno.serve(async (request) => {
     return jsonResponse({
       success: true,
       roadmaps: normalizedRoadmaps,
-      roadmapEngine: "gemini-2.5-flash",
+      roadmapEngine: GEMINI_MODEL,
       updatedAt: new Date().toISOString(),
     });
   } catch (error) {

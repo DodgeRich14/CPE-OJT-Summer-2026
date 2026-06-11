@@ -1352,6 +1352,7 @@ const defaultState = {
   profileExperience: [],
   profileCertificates: [],
   volunteerActivities: [],
+  persistedApplications: [],
   adminUsers: [],
   adminCourses: [
     { id: 1, title: "GraphQL Mastery", owner: "Priya Nair", status: "Published" },
@@ -1380,6 +1381,8 @@ const defaultState = {
     updatedAt: "",
     roadmapEngine: "",
     lastGeneratedKey: "",
+    progressPercent: 0,
+    progressLabel: "",
   },
 };
 
@@ -1437,6 +1440,8 @@ function buildPersistedState(state) {
     roadmapStatus: {
       ...state.roadmapStatus,
       loading: false,
+      progressPercent: 0,
+      progressLabel: "",
     },
   };
 }
@@ -1599,6 +1604,7 @@ function App() {
   const [activeRoadmapIndex, setActiveRoadmapIndex] = useState(0);
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "Applicant" });
   const [authFeedback, setAuthFeedback] = useState("");
+  const [roadmapGenerationRequestId, setRoadmapGenerationRequestId] = useState(0);
   const [announcementForm, setAnnouncementForm] = useState({
     tag: "Update",
     label: "Announcement",
@@ -1705,6 +1711,7 @@ function App() {
           profile: guestProfile,
           applications: [],
           applicationStatusById: initialApplicationStatus,
+          persistedApplications: [],
           careerRoadmaps: [],
           expandedApplicationId: null,
           expandedRoadmapId: "",
@@ -1992,7 +1999,7 @@ function App() {
 
     supabase
       .from("applications")
-      .select("job_id,status,applied_at,status_timeline")
+      .select("job_id,status,applied_at,status_timeline,matched_skills,skill_gaps,match_score,job:jobs(id,title,company_name,category,location,work_type,description,responsibilities,required_skills,posted_at,source_platform,source_url)")
       .eq("applicant_id", state.auth.accountId)
       .neq("status", "Withdrawn")
       .order("applied_at", { ascending: true })
@@ -2013,6 +2020,7 @@ function App() {
           ...current,
           applications,
           applicationStatusById,
+          persistedApplications: rows,
           expandedApplicationId:
             current.expandedApplicationId && applications.includes(current.expandedApplicationId)
               ? current.expandedApplicationId
@@ -2222,14 +2230,14 @@ function App() {
     if (listings.length === 0) return;
 
     const listingIds = new Set(listings.map((listing) => String(listing.id)));
+    const applicationIds = new Set(state.applications.map((id) => String(id)));
 
     setState((current) => {
-      const applications = current.applications.filter((id) => listingIds.has(String(id)));
       const saved = current.saved.filter((id) => listingIds.has(String(id)));
       const selectedJobId = current.selectedJobId && listingIds.has(String(current.selectedJobId)) ? current.selectedJobId : null;
       const expandedApplicationId =
-        current.expandedApplicationId && listingIds.has(String(current.expandedApplicationId)) ? current.expandedApplicationId : null;
-      const careerRoadmaps = current.careerRoadmaps.filter((item) => listingIds.has(String(item.job_id)));
+        current.expandedApplicationId && applicationIds.has(String(current.expandedApplicationId)) ? current.expandedApplicationId : null;
+      const careerRoadmaps = current.careerRoadmaps.filter((item) => applicationIds.has(String(item.job_id)));
       const expandedRoadmapId =
         current.expandedRoadmapId &&
         careerRoadmaps.some((item) => (item.phases ?? []).some((phase) => `${item.job_id}:${phase.id}` === current.expandedRoadmapId))
@@ -2237,7 +2245,6 @@ function App() {
           : "";
 
       if (
-        applications.length === current.applications.length &&
         saved.length === current.saved.length &&
         selectedJobId === current.selectedJobId &&
         expandedApplicationId === current.expandedApplicationId &&
@@ -2249,7 +2256,6 @@ function App() {
 
       return {
         ...current,
-        applications,
         saved,
         selectedJobId,
         expandedApplicationId,
@@ -2257,7 +2263,7 @@ function App() {
         expandedRoadmapId,
       };
     });
-  }, [listings, state.aiStatus.error, state.aiStatus.loadingJobs]);
+  }, [listings, state.aiStatus.error, state.aiStatus.loadingJobs, state.applications]);
 
   const counts = useMemo(
     () =>
@@ -2282,14 +2288,62 @@ function App() {
   );
 
   const appliedCards = useMemo(
-    () =>
-      listings
-        .filter((listing) => state.applications.includes(listing.id))
-        .map((listing) => ({
-          ...listing,
-          ...(state.applicationStatusById[listing.id] ?? createApplicationEntry()),
-        })),
-    [listings, state.applications, state.applicationStatusById],
+    () => {
+      const listingById = new Map(listings.map((listing) => [String(listing.id), listing]));
+      const persistedById = new Map(state.persistedApplications.map((record) => [String(record.job_id), record]));
+
+      return state.applications
+        .map((jobId, index) => {
+          const normalizedId = String(jobId);
+          const liveListing = listingById.get(normalizedId);
+
+          if (liveListing) {
+            return {
+              ...liveListing,
+              ...(state.applicationStatusById[jobId] ?? createApplicationEntry()),
+            };
+          }
+
+          const persisted = persistedById.get(normalizedId);
+          const job = persisted?.job;
+
+          if (!job) return null;
+
+          const requiredSkills =
+            job.required_skills?.length
+              ? job.required_skills
+              : extractListingSkills(job.title, job.description, ...(job.responsibilities ?? []));
+
+          return {
+            id: job.id,
+            category: normalizeCategoryForState(job.category),
+            company: job.company_name || "External employer",
+            title: job.title || "Applied role",
+            meta: `${job.work_type || "Flexible"} | ${job.location || "Philippines"} | External listing`,
+            overview: job.description || "",
+            sourceDescription: job.description || "",
+            setup: `${job.category || "Jobs"} | ${job.work_type || "Flexible"} | ${job.source_platform || "External listing"}`,
+            responsibilities: job.responsibilities?.length ? job.responsibilities : [],
+            sourceResponsibilities: job.responsibilities?.length ? job.responsibilities : [],
+            employerNotes: [],
+            posted: formatRelativeDate(job.posted_at),
+            applicants: Math.max(9, Number(persisted?.match_score ?? 52) - 20),
+            requiredSkills,
+            scoreBase: Number(persisted?.match_score ?? 72),
+            score: Number(persisted?.match_score ?? 72),
+            scoreTone: getScoreToneClass(Number(persisted?.match_score ?? 72)),
+            gaps: Array.isArray(persisted?.skill_gaps) ? persisted.skill_gaps : [],
+            accent: accentSequence[index % accentSequence.length],
+            initial: (job.company_name || "E").charAt(0).toUpperCase(),
+            sourceUrl: job.source_url || "",
+            aiReason: "",
+            matchedSkills: Array.isArray(persisted?.matched_skills) ? persisted.matched_skills : [],
+            ...(state.applicationStatusById[jobId] ?? mapApplicationRecordToState(persisted)),
+          };
+        })
+        .filter(Boolean);
+    },
+    [listings, state.applications, state.applicationStatusById, state.persistedApplications],
   );
 
   const savedCards = useMemo(
@@ -2304,27 +2358,21 @@ function App() {
     () => state.applications.slice(0, 3).map((jobId) => appliedCardMap.get(String(jobId))).filter(Boolean),
     [appliedCardMap, state.applications],
   );
+  const roadmapProfileSignature = useMemo(
+    () => buildRoadmapProfileSignature(state.profile, roadmapCandidateJobs),
+    [roadmapCandidateJobs, state.profile],
+  );
+  const roadmapCandidateJobIds = useMemo(
+    () => roadmapCandidateJobs.map((job) => String(job.id)),
+    [roadmapCandidateJobs],
+  );
   const roadmapGenerationKey = useMemo(
     () =>
       JSON.stringify({
-        jobs: roadmapCandidateJobs.map((job) => ({
-          id: String(job.id),
-          title: job.title,
-          company: job.company,
-          skills: (job.requiredSkills ?? []).slice(0, 8),
-          score: job.score,
-        })),
-        profile: {
-          role: state.profile.role,
-          jobTitle: state.profile.jobTitle,
-          about: state.profile.about,
-          skills: [...(state.profile.skills ?? [])].sort(),
-          suggestedRoles: [...(state.profile.aiProfile?.suggested_roles ?? [])].sort(),
-          summary: state.profile.aiProfile?.summary ?? "",
-          strengths: [...(state.profile.aiProfile?.strengths ?? [])].sort(),
-        },
+        jobs: roadmapCandidateJobIds,
+        signature: roadmapProfileSignature,
       }),
-    [roadmapCandidateJobs, state.profile],
+    [roadmapCandidateJobIds, roadmapProfileSignature],
   );
   const inProgressCount = appliedCards.filter((card) => ["Reviewed", "Shortlisted"].includes(card.status)).length;
   const interviewCount = appliedCards.filter((card) => card.status === "Interview").length;
@@ -2385,6 +2433,8 @@ function App() {
             updatedAt: "",
             roadmapEngine: "",
             lastGeneratedKey: "",
+            progressPercent: 0,
+            progressLabel: "",
           },
         };
       });
@@ -2430,23 +2480,78 @@ function App() {
     };
     const immediateRoadmaps = buildCareerRoadmapFallback(roadmapPayload).roadmaps;
 
-    setState((current) => ({
-      ...current,
-      careerRoadmaps: immediateRoadmaps,
-      roadmapStatus: {
-        ...current.roadmapStatus,
-        loading: true,
-        error: "",
-        updatedAt: new Date().toISOString(),
-        roadmapEngine: "local-fallback",
-        lastGeneratedKey: roadmapGenerationKey,
-      },
-    }));
+    async function loadRoadmapsWithCache() {
+      let cachedRows = [];
 
-    async function enhanceRoadmapsSequentially() {
+      if (hasSupabaseConfig && supabase && state.auth.accountId) {
+        const { data } = await supabase
+          .from("roadmap_items")
+          .select("id,title,summary,status,target_month,updated_at")
+          .eq("applicant_id", state.auth.accountId)
+          .eq("phase_label", "CACHE");
+
+        cachedRows = data ?? [];
+      }
+
+      if (cancelled) return;
+
+      const cachedMap = new Map(
+        roadmapCandidateJobIds
+          .map((jobId) => {
+            const cacheTitle = buildRoadmapCacheTitle(jobId, roadmapProfileSignature);
+            const row = cachedRows.find((item) => item.title === cacheTitle);
+            if (!row) return null;
+            return [String(jobId), normalizeCachedRoadmapRecord({ ...row, cacheJobId: jobId }), row];
+          })
+          .filter(Boolean),
+      );
+      const missingJobs = roadmapPayload.jobs.filter((job) => !cachedMap.has(String(job.id)));
+      const shouldGenerateMissingJobs = roadmapGenerationRequestId > 0;
+      const fallbackByJobId = new Map(immediateRoadmaps.map((roadmap) => [String(roadmap.job_id), roadmap]));
+      const immediateMergedRoadmaps = roadmapCandidateJobIds
+        .map((jobId) => cachedMap.get(String(jobId))?.[0] ?? fallbackByJobId.get(String(jobId)))
+        .filter(Boolean);
+      const latestCachedAt = cachedRows
+        .map((row) => row.updated_at)
+        .filter(Boolean)
+        .sort()
+        .at(-1);
+      const hasCachedAiRoadmap = cachedRows.some((row) => row.status && row.status !== "Planned");
+      const cachedCount = roadmapCandidateJobIds.length - missingJobs.length;
+      const initialProgress = buildRoadmapProgress(cachedCount, roadmapCandidateJobIds.length);
+
+      setState((current) => ({
+        ...current,
+        careerRoadmaps: immediateMergedRoadmaps,
+          roadmapStatus: {
+            ...current.roadmapStatus,
+            loading: shouldGenerateMissingJobs && missingJobs.length > 0,
+            error: "",
+            updatedAt: latestCachedAt || new Date().toISOString(),
+            roadmapEngine: hasCachedAiRoadmap ? "ai-structured-output" : "local-fallback",
+            lastGeneratedKey: roadmapGenerationKey,
+            progressPercent:
+              !shouldGenerateMissingJobs && cachedRows.length === 0
+                ? 0
+                : missingJobs.length > 0
+                  ? initialProgress.progressPercent
+                  : 100,
+            progressLabel:
+              !shouldGenerateMissingJobs && cachedRows.length === 0
+                ? ""
+                : missingJobs.length > 0
+                  ? initialProgress.progressLabel
+                  : `${roadmapCandidateJobIds.length}/${roadmapCandidateJobIds.length} roadmaps enhanced`,
+          },
+        }));
+
+      if (missingJobs.length === 0 || !shouldGenerateMissingJobs) {
+        return;
+      }
+
       const results = [];
 
-      for (const job of roadmapPayload.jobs) {
+      for (const job of missingJobs) {
         if (cancelled) break;
 
         try {
@@ -2455,30 +2560,77 @@ function App() {
             jobs: [job],
           });
 
-          results.push({ status: "fulfilled", value: result });
+          results.push({ status: "fulfilled", value: result, jobId: job.id });
           if (cancelled) break;
 
           const generatedRoadmap = result.roadmaps?.[0];
-          if (generatedRoadmap && !result.usedFallback) {
+          if (generatedRoadmap) {
+            if (hasSupabaseConfig && supabase && state.auth.accountId && !result.usedFallback) {
+              const cacheTitle = buildRoadmapCacheTitle(job.id, roadmapProfileSignature);
+              const existingCacheRow = cachedRows.find((row) => row.title === cacheTitle);
+              const cachePayload = {
+                applicant_id: state.auth.accountId,
+                phase_label: "CACHE",
+                title: cacheTitle,
+                summary: JSON.stringify(generatedRoadmap),
+                skills: [],
+                actions: [],
+                sort_order: 0,
+                status: "Active",
+                target_month: result.updatedAt || new Date().toISOString(),
+              };
+
+              if (existingCacheRow?.id) {
+                await supabase.from("roadmap_items").update(cachePayload).eq("id", existingCacheRow.id);
+              } else {
+                const { data: insertedCache } = await supabase
+                  .from("roadmap_items")
+                  .insert(cachePayload)
+                  .select("id,title,summary,status,target_month,updated_at")
+                  .maybeSingle();
+
+                if (insertedCache) {
+                  cachedRows.push(insertedCache);
+                }
+              }
+            }
+
             setState((current) => {
               if (current.roadmapStatus.lastGeneratedKey !== roadmapGenerationKey) return current;
 
+              const nextRoadmaps = current.careerRoadmaps
+                .map((roadmap) => (String(roadmap.job_id) === String(generatedRoadmap.job_id) ? generatedRoadmap : roadmap))
+                .filter(Boolean);
+              const completedProgress = buildRoadmapProgress(cachedCount + results.length, roadmapCandidateJobIds.length);
+
               return {
                 ...current,
-                careerRoadmaps: current.careerRoadmaps.map((roadmap) =>
-                  String(roadmap.job_id) === String(generatedRoadmap.job_id) ? generatedRoadmap : roadmap,
-                ),
+                careerRoadmaps: nextRoadmaps,
                 roadmapStatus: {
                   ...current.roadmapStatus,
                   updatedAt: result.updatedAt || new Date().toISOString(),
-                  roadmapEngine: "gemini-2.5-flash",
+                  roadmapEngine: result.usedFallback ? current.roadmapStatus.roadmapEngine : (result.roadmapEngine || "ai-structured-output"),
+                  progressPercent: completedProgress.progressPercent,
+                  progressLabel: completedProgress.progressLabel,
                 },
               };
             });
           }
-
         } catch (error) {
-          results.push({ status: "rejected", reason: error });
+          results.push({ status: "rejected", reason: error, jobId: job.id });
+          setState((current) => {
+            if (current.roadmapStatus.lastGeneratedKey !== roadmapGenerationKey) return current;
+
+            const completedProgress = buildRoadmapProgress(cachedCount + results.length, roadmapCandidateJobIds.length);
+            return {
+              ...current,
+              roadmapStatus: {
+                ...current.roadmapStatus,
+                progressPercent: completedProgress.progressPercent,
+                progressLabel: completedProgress.progressLabel,
+              },
+            };
+          });
         }
       }
 
@@ -2486,9 +2638,9 @@ function App() {
 
       const failures = results
         .filter((result) => result.status === "rejected" || result.value?.fallbackError)
-        .map((result) => result.status === "rejected" ? result.reason?.message : result.value.fallbackError)
+        .map((result) => (result.status === "rejected" ? result.reason?.message : result.value.fallbackError))
         .filter(Boolean);
-      const hasGeminiRoadmap = results.some(
+      const hasAiRoadmap = hasCachedAiRoadmap || results.some(
         (result) => result.status === "fulfilled" && !result.value?.usedFallback && result.value?.roadmaps?.length > 0,
       );
 
@@ -2502,22 +2654,45 @@ function App() {
             loading: false,
             error: failures.length > 0 ? `Some roadmaps used the local version: ${failures[0]}` : "",
             updatedAt: new Date().toISOString(),
-            roadmapEngine: hasGeminiRoadmap ? "gemini-2.5-flash" : "local-fallback",
+            roadmapEngine: hasAiRoadmap ? "ai-structured-output" : "local-fallback",
+            progressPercent: 100,
+            progressLabel: `${roadmapCandidateJobIds.length}/${roadmapCandidateJobIds.length} roadmaps enhanced`,
           },
         };
       });
     }
+    loadRoadmapsWithCache().catch((error) => {
+      if (cancelled) return;
 
-    enhanceRoadmapsSequentially();
+      setState((current) => ({
+        ...current,
+        careerRoadmaps: immediateRoadmaps,
+        roadmapStatus: {
+          ...current.roadmapStatus,
+          loading: false,
+          error: error.message || "Failed to load cached roadmaps.",
+          updatedAt: new Date().toISOString(),
+          roadmapEngine: "local-fallback",
+          lastGeneratedKey: roadmapGenerationKey,
+          progressPercent: 0,
+          progressLabel: "",
+        },
+      }));
+    });
 
     return () => {
       cancelled = true;
     };
   }, [
     hasActiveSubscription,
+    hasSupabaseConfig,
     isAdmin,
+    roadmapCandidateJobIds,
     roadmapCandidateJobs,
     roadmapGenerationKey,
+    roadmapGenerationRequestId,
+    roadmapProfileSignature,
+    state.auth.accountId,
     state.auth.isAuthenticated,
     state.roadmapStatus.lastGeneratedKey,
     state.roadmapStatus.loading,
@@ -2668,6 +2843,30 @@ function App() {
     if (error) {
       throw new Error(error.message || "Failed to save the application.");
     }
+  }
+
+  async function clearCachedRoadmaps(options = {}) {
+    if (!hasSupabaseConfig || !supabase || !state.auth.isAuthenticated || !state.auth.accountId) return;
+
+    const { data } = await supabase
+      .from("roadmap_items")
+      .select("id,title")
+      .eq("applicant_id", state.auth.accountId)
+      .eq("phase_label", "CACHE");
+
+    const matchingIds = (data ?? [])
+      .filter((item) => {
+        if (!options.jobId) {
+          return String(item.title || "").startsWith("job-cache:");
+        }
+
+        return String(item.title || "").startsWith(`job-cache:${options.jobId}:`);
+      })
+      .map((item) => item.id);
+
+    if (matchingIds.length === 0) return;
+
+    await supabase.from("roadmap_items").delete().in("id", matchingIds);
   }
 
   async function handleSuspendedAccount(email = "") {
@@ -3208,6 +3407,36 @@ function App() {
             ...current.applicationStatusById,
             [jobId]: optimisticEntry,
           },
+      persistedApplications: current.persistedApplications.some((record) => String(record.job_id) === String(jobId))
+        ? current.persistedApplications
+        : listing
+          ? [
+              ...current.persistedApplications,
+              {
+                job_id: jobId,
+                status: "Applied",
+                applied_at: new Date().toISOString(),
+                status_timeline: optimisticEntry.stageDates,
+                matched_skills: listing.matchedSkills ?? [],
+                skill_gaps: listing.gaps ?? [],
+                match_score: Number(listing.score ?? 0),
+                job: {
+                  id: listing.id,
+                  title: listing.title,
+                  company_name: listing.company,
+                  category: listing.category,
+                  location: listing.meta?.split("|")?.[1]?.trim() || "",
+                  work_type: listing.meta?.split("|")?.[0]?.trim() || "",
+                  description: listing.sourceDescription || listing.overview || "",
+                  responsibilities: listing.sourceResponsibilities ?? listing.responsibilities ?? [],
+                  required_skills: listing.requiredSkills ?? [],
+                  posted_at: null,
+                  source_platform: "External listing",
+                  source_url: listing.sourceUrl || "",
+                },
+              },
+            ]
+          : current.persistedApplications,
     }));
 
     persistApplicationRecord(jobId, {
@@ -3374,6 +3603,7 @@ function App() {
         ...current,
         applications: current.applications.filter((id) => id !== jobId),
         applicationStatusById: nextApplicationStatusById,
+        persistedApplications: current.persistedApplications.filter((record) => String(record.job_id) !== String(jobId)),
         expandedApplicationId: current.expandedApplicationId === jobId ? null : current.expandedApplicationId,
         careerRoadmaps: current.careerRoadmaps.filter((item) => String(item.job_id) !== String(jobId)),
         expandedRoadmapId: String(current.expandedRoadmapId || "").startsWith(`${jobId}:`) ? "" : current.expandedRoadmapId,
@@ -3386,6 +3616,8 @@ function App() {
                 updatedAt: "",
                 roadmapEngine: "",
                 lastGeneratedKey: "",
+                progressPercent: 0,
+                progressLabel: "",
               }
             : current.roadmapStatus,
       };
@@ -3395,7 +3627,9 @@ function App() {
     persistApplicationRecord(jobId, {
       status: "Withdrawn",
       status_timeline: currentEntry.stageDates,
-    }).catch(() => {});
+    })
+      .then(() => clearCachedRoadmaps({ jobId }))
+      .catch(() => {});
   }
 
   function retryCareerRoadmaps() {
@@ -3406,8 +3640,26 @@ function App() {
         loading: false,
         error: "",
         lastGeneratedKey: "",
+        progressPercent: 0,
+        progressLabel: "",
       },
     }));
+    setRoadmapGenerationRequestId((current) => current + 1);
+  }
+
+  function requestCareerRoadmaps() {
+    setState((current) => ({
+      ...current,
+      roadmapStatus: {
+        ...current.roadmapStatus,
+        error: "",
+        loading: false,
+        lastGeneratedKey: "",
+        progressPercent: 0,
+        progressLabel: "",
+      },
+    }));
+    setRoadmapGenerationRequestId((current) => current + 1);
   }
 
   function toggleRoadmapItem(itemId) {
@@ -3574,6 +3826,7 @@ function App() {
       }));
 
       await persistProfileRecord(state.auth.accountId, nextProfile);
+      await clearCachedRoadmaps();
     } catch (error) {
       setState((current) => ({
         ...current,
@@ -3599,6 +3852,7 @@ function App() {
 
     try {
       await persistProfileRecord(state.auth.accountId, nextProfile);
+      await clearCachedRoadmaps();
     } catch (error) {
       setAuthFeedback(error instanceof Error ? error.message : "Unable to save profile changes.");
       return;
@@ -5349,15 +5603,40 @@ function App() {
               <span className="status-badge ready">{roadmapCandidateJobs.length}/3 tracked applications</span>
               <span>
                 {state.roadmapStatus.loading
-                  ? "Improving with Gemini..."
+                  ? "Improving with AI..."
                   : state.roadmapStatus.roadmapEngine === "local-fallback"
                     ? "Instant local roadmap"
-                    : "Gemini-assisted roadmap"}
+                    : "AI-assisted roadmap"}
               </span>
               <span>
                 {state.roadmapStatus.updatedAt ? `Updated ${getTodayLongDateFromValue(state.roadmapStatus.updatedAt)}` : "Waiting for roadmap generation"}
               </span>
+              {state.roadmapStatus.loading ? (
+                <span>{state.roadmapStatus.progressPercent}% complete</span>
+              ) : null}
             </div>
+
+            {roadmapCandidateJobs.length > 0 ? (
+              <div className="roadmap-generate-row">
+                <button
+                  className="profile-primary-button small"
+                  type="button"
+                  onClick={requestCareerRoadmaps}
+                  disabled={state.roadmapStatus.loading}
+                >
+                  {state.roadmapStatus.loading ? "Generating..." : "Generate Roadmap"}
+                </button>
+              </div>
+            ) : null}
+
+            {state.roadmapStatus.loading ? (
+              <div className="roadmap-progress-block" aria-live="polite">
+                <div className="roadmap-progress-bar">
+                  <div className="roadmap-progress-fill" style={{ width: `${state.roadmapStatus.progressPercent}%` }} />
+                </div>
+                <span>{state.roadmapStatus.progressLabel || `${state.roadmapStatus.progressPercent}% complete`}</span>
+              </div>
+            ) : null}
 
             {state.roadmapStatus.error ? <p className="form-feedback">{state.roadmapStatus.error}</p> : null}
 
@@ -5374,7 +5653,14 @@ function App() {
               </div>
             ) : null}
 
-            {!state.roadmapStatus.loading && roadmapCandidateJobs.length > 0 && roadmapItems.length === 0 ? (
+            {!state.roadmapStatus.loading && roadmapCandidateJobs.length > 0 && roadmapItems.length === 0 && !state.roadmapStatus.error ? (
+              <div className="profile-empty-card roadmap-empty-card">
+                <strong>No roadmap generated yet.</strong>
+                <p>Press Generate Roadmap to create AI roadmaps for your first three active applications.</p>
+              </div>
+            ) : null}
+
+            {!state.roadmapStatus.loading && roadmapCandidateJobs.length > 0 && roadmapItems.length === 0 && state.roadmapStatus.error ? (
               <div className="profile-empty-card roadmap-empty-card">
                 <strong>Roadmap generation failed.</strong>
                 <p>{state.roadmapStatus.error || "No roadmap could be generated for your current applied jobs."}</p>
@@ -6842,6 +7128,80 @@ function mapApplicationRecordToState(record) {
     status,
     appliedDate: record?.applied_at ? getTodayLongDateFromValue(record.applied_at) : getTodayLongDate(),
     stageDates: normalizeApplicationStageDates(record?.status_timeline, status),
+  };
+}
+
+function hashRoadmapSignature(value) {
+  const input = String(value || "");
+  let hash = 0;
+
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) | 0;
+  }
+
+  return `rm_${Math.abs(hash)}`;
+}
+
+function buildRoadmapProfileSignature(profile, roadmapJobs = []) {
+  const payload = JSON.stringify({
+    role: profile.role || "",
+    jobTitle: profile.jobTitle || "",
+    about: profile.about || "",
+    location: profile.location || "",
+    skills: [...(profile.skills ?? [])].map(String).sort(),
+    aiProfile: {
+      headline: profile.aiProfile?.headline || "",
+      summary: profile.aiProfile?.summary || "",
+      suggested_roles: [...(profile.aiProfile?.suggested_roles ?? [])].map(String).sort(),
+      strengths: [...(profile.aiProfile?.strengths ?? [])].map(String).sort(),
+      improvement_skills: [...(profile.aiProfile?.improvement_skills ?? [])].map(String).sort(),
+      skills: [...(profile.aiProfile?.skills ?? [])].map(String).sort(),
+      sourceFileName: profile.aiProfile?.sourceFileName || "",
+    },
+    jobs: roadmapJobs.map((job) => ({
+      id: String(job.id),
+      title: job.title || "",
+      company: job.company || "",
+      requiredSkills: [...(job.requiredSkills ?? [])].map(String).sort(),
+      description: String(job.sourceDescription || job.overview || "").slice(0, 500),
+    })),
+  });
+
+  return hashRoadmapSignature(payload);
+}
+
+function normalizeCachedRoadmapRecord(record) {
+  if (!record?.summary) return null;
+
+  try {
+    const parsed = JSON.parse(record.summary);
+    if (!parsed || typeof parsed !== "object") return null;
+
+    return {
+      ...parsed,
+      job_id: String(parsed.job_id || record.cacheJobId || ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildRoadmapCacheTitle(jobId, profileSignature) {
+  return `job-cache:${jobId}:${profileSignature}`;
+}
+
+function buildRoadmapProgress(completedCount, totalCount) {
+  if (totalCount <= 0) {
+    return {
+      progressPercent: 0,
+      progressLabel: "",
+    };
+  }
+
+  const safeCompleted = Math.max(0, Math.min(completedCount, totalCount));
+  return {
+    progressPercent: Math.round((safeCompleted / totalCount) * 100),
+    progressLabel: `${safeCompleted}/${totalCount} roadmaps enhanced`,
   };
 }
 
