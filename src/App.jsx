@@ -572,9 +572,8 @@ function getScoreToneClass(score) {
 
 const matchScoreFactors = [
   { key: "job_title_match", label: "Job title fit", weight: 35 },
-  { key: "skill_match", label: "Skill match", weight: 30 },
-  { key: "description_similarity", label: "Description fit", weight: 20 },
-  { key: "location_match", label: "Location fit", weight: 10 },
+  { key: "skill_match", label: "Skill match", weight: 35 },
+  { key: "description_similarity", label: "Description fit", weight: 25 },
   { key: "freshness", label: "Posting freshness", weight: 5 },
 ];
 
@@ -696,14 +695,12 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
   const skillAlignmentScore = clampScore(Math.round(specificCoverageRatio * 85 + genericCoverageRatio * 15), 0, 100);
   const titleMatchScore = computeJobTitleMatchScore(profile, listing);
   const descriptionSimilarityScore = computeDescriptionSimilarityScore(profile, listing, rawMatchedSkills);
-  const locationMatchScore = computeLocationMatchScore(profile, listing);
   const freshnessScore = computeFreshnessScore(listing.posted);
   const fallbackScore = Math.round(
     computeWeightedAverageScore([
       { score: titleMatchScore, weight: 0.35 },
-      { score: skillAlignmentScore, weight: 0.3 },
-      { score: descriptionSimilarityScore, weight: 0.2 },
-      { score: locationMatchScore, weight: 0.1 },
+      { score: skillAlignmentScore, weight: 0.35 },
+      { score: descriptionSimilarityScore, weight: 0.25 },
       { score: freshnessScore, weight: 0.05 },
     ]),
   );
@@ -720,7 +717,6 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
       job_title_match: titleMatchScore,
       skill_match: skillAlignmentScore,
       description_similarity: descriptionSimilarityScore,
-      location_match: locationMatchScore,
       freshness: freshnessScore,
       weightedTotal: clampScore(fallbackScore),
       evidenceCeiling,
@@ -1329,6 +1325,8 @@ const defaultState = {
     refreshingRecommendations: false,
     error: "",
     updatedAt: "",
+    recommendationModel: "",
+    semanticCandidates: 0,
     lastAutoRecommendationKey: "",
   },
   applicationStatusById: initialApplicationStatus,
@@ -2412,13 +2410,15 @@ function App() {
 
     setState((current) => ({
       ...current,
-      aiStatus: {
-        ...current.aiStatus,
-        refreshingRecommendations: true,
-        error: "",
-        lastAutoRecommendationKey: autoKey || current.aiStatus.lastAutoRecommendationKey,
-      },
-    }));
+        aiStatus: {
+          ...current.aiStatus,
+          refreshingRecommendations: true,
+          error: "",
+          recommendationModel: current.aiStatus.recommendationModel,
+          semanticCandidates: current.aiStatus.semanticCandidates,
+          lastAutoRecommendationKey: autoKey || current.aiStatus.lastAutoRecommendationKey,
+        },
+      }));
 
     try {
       const recommendationCategory =
@@ -2444,6 +2444,11 @@ function App() {
         aiStatus: {
           ...current.aiStatus,
           refreshingRecommendations: false,
+          error: response.fallbackError
+            ? `AI matching fell back to local ranking: ${response.fallbackError}`
+            : "",
+          recommendationModel: response.model || "",
+          semanticCandidates: Number(response.semantic_candidates ?? 0),
           updatedAt: getTodayShortDate(),
         },
       }));
@@ -4213,6 +4218,11 @@ function App() {
                   <span>{hasSupabaseConfig ? "Live Supabase connected" : "Supabase not configured"}</span>
                   <span>{state.liveJobs.length} live jobs loaded</span>
                   <span>{rankedListings.length} ranked roles</span>
+                  <span>
+                    {state.aiStatus.recommendationModel === "gemini-embedding-001"
+                      ? `Gemini-assisted top ${state.aiStatus.semanticCandidates} jobs`
+                      : "Weighted fallback ranking"}
+                  </span>
                   <span>{state.aiStatus.updatedAt ? `Updated ${state.aiStatus.updatedAt}` : "Awaiting resume analysis"}</span>
                 </div>
 

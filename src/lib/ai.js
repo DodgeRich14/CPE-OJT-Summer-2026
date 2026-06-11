@@ -600,15 +600,13 @@ function computeRecommendationFallback(payload, jobs) {
       const skillAlignmentScore = clampScore(Math.round(specificCoverage * 85 + genericCoverage * 15), 0, 100);
       const titleMatchScore = computeJobTitleMatchScore(profile, resumeProfile, job);
       const descriptionSimilarityScore = computeDescriptionSimilarityScore(profile, resumeProfile, job, requiredSkills, rawMatchedSkills);
-      const locationMatchScore = computeLocationMatchScore(profile, job);
       const freshnessScore = computeFreshnessScore(job.posted_at);
       const skillGaps = requiredSkills.filter((required) => !getOverlapMatches(rawMatchedSkills, [required]).length);
       let rawScore = Math.round(
         computeWeightedAverageScore([
           { score: titleMatchScore, weight: 0.35 },
-          { score: skillAlignmentScore, weight: 0.3 },
-          { score: descriptionSimilarityScore, weight: 0.2 },
-          { score: locationMatchScore, weight: 0.1 },
+          { score: skillAlignmentScore, weight: 0.35 },
+          { score: descriptionSimilarityScore, weight: 0.25 },
           { score: freshnessScore, weight: 0.05 },
         ]),
       );
@@ -641,7 +639,6 @@ function computeRecommendationFallback(payload, jobs) {
           job_title_match: Math.round(titleMatchScore),
           skill_match: Math.round(skillAlignmentScore),
           description_similarity: Math.round(descriptionSimilarityScore),
-          location_match: Math.round(locationMatchScore),
           freshness: Math.round(freshnessScore),
         },
         reason,
@@ -686,17 +683,58 @@ export async function fetchRecommendedJobs(payload) {
   });
 
   if (error) {
+    let detailedError = "The recommend-jobs function could not be reached.";
+
+    if (error.context instanceof Response) {
+      try {
+        const responseBody = await error.context.text();
+        if (responseBody) {
+          try {
+            const parsed = JSON.parse(responseBody);
+            detailedError =
+              parsed?.error ||
+              parsed?.message ||
+              parsed?.code ||
+              responseBody;
+          } catch {
+            detailedError = responseBody;
+          }
+        } else {
+          detailedError = `${error.message || "Edge Function request failed."} (status ${error.context.status})`;
+        }
+      } catch {
+        detailedError = `${error.message || "Edge Function request failed."} (status ${error.context.status})`;
+      }
+    } else if (error.context && typeof error.context === "object") {
+      detailedError =
+        error.context.error ||
+        error.context.msg ||
+        error.context.message ||
+        error.message ||
+        detailedError;
+    } else if (error.message) {
+      detailedError = error.message;
+    }
+
     const jobs = await loadOpenJobs(
       "id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url",
     );
-    return computeRecommendationFallback(payload, jobs ?? []);
+    return {
+      ...computeRecommendationFallback(payload, jobs ?? []),
+      fallbackError: detailedError,
+      fallbackSource: "edge-function-request",
+    };
   }
 
   if (data?.error) {
     const jobs = await loadOpenJobs(
       "id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url",
     );
-    return computeRecommendationFallback(payload, jobs ?? []);
+    return {
+      ...computeRecommendationFallback(payload, jobs ?? []),
+      fallbackError: data.error || "The recommend-jobs function returned an error.",
+      fallbackSource: "edge-function-response",
+    };
   }
 
   return data;
