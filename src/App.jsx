@@ -5759,7 +5759,7 @@ function App() {
                         <button
                           className="roadmap-cta module-test-button"
                           type="button"
-                          onClick={() => setActivePracticeTest({ key: practiceKey, title: card.title, questions: cardQuestions })}
+                          onClick={() => setActivePracticeTest({ key: practiceKey, title: card.title, questions: cardQuestions, questionIndex: 0 })}
                         >
                           {answeredCount > 0 ? "Continue Practice Test" : "Start Practice Test"}
                         </button>
@@ -6200,9 +6200,12 @@ function App() {
 
             {(() => {
               const activeQuestions = activePracticeTest.questions ?? defaultPracticeTestQuestions;
+              const activeQuestionIndex = Math.min(activePracticeTest.questionIndex ?? 0, activeQuestions.length - 1);
+              const activeQuestion = activeQuestions[activeQuestionIndex];
               const activeAnswers = practiceAnswers[activePracticeTest.key] ?? {};
               const answeredCount = activeQuestions.filter((item) => activeAnswers[item.id] !== undefined).length;
               const correctCount = activeQuestions.filter((item) => activeAnswers[item.id] === item.answer).length;
+              const selectedAnswer = activeAnswers[activeQuestion.id];
 
               return (
                 <div className="profile-panel-body practice-test-body">
@@ -6217,47 +6220,81 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="practice-question-list">
-                    {activeQuestions.map((item, questionIndex) => {
-                      const selectedAnswer = activeAnswers[item.id];
+                  <div className="practice-question-stage">
+                    <div className="practice-question-nav">
+                      <button
+                        className="job-nav-button"
+                        type="button"
+                        aria-label="Previous question"
+                        disabled={activeQuestionIndex === 0}
+                        onClick={() =>
+                          setActivePracticeTest((current) =>
+                            current ? { ...current, questionIndex: Math.max(0, activeQuestionIndex - 1) } : current,
+                          )
+                        }
+                      >
+                        <ChevronLeft size={18} />
+                      </button>
+                      <span>{activeQuestionIndex + 1} / {activeQuestions.length}</span>
+                      <button
+                        className="job-nav-button"
+                        type="button"
+                        aria-label="Next question"
+                        disabled={activeQuestionIndex >= activeQuestions.length - 1}
+                        onClick={() =>
+                          setActivePracticeTest((current) =>
+                            current ? { ...current, questionIndex: Math.min(activeQuestions.length - 1, activeQuestionIndex + 1) } : current,
+                          )
+                        }
+                      >
+                        <ChevronRight size={18} />
+                      </button>
+                    </div>
 
-                      return (
-                        <div key={item.id} className="practice-question">
-                          <div className="practice-question-head">
-                            <span>Question {questionIndex + 1}</span>
-                            {selectedAnswer !== undefined ? (
-                              <strong className={selectedAnswer === item.answer ? "mint-text" : "gold-text"}>
-                                {selectedAnswer === item.answer ? "Correct" : "Review"}
-                              </strong>
-                            ) : null}
-                          </div>
-                          <p>{item.question}</p>
-                          <div className="practice-options">
-                            {item.options.map((option, optionIndex) => (
-                              <button
-                                key={option}
-                                className={`practice-option${selectedAnswer === optionIndex ? " selected" : ""}${
-                                  selectedAnswer !== undefined && item.answer === optionIndex ? " correct" : ""
-                                }`}
-                                type="button"
-                                onClick={() =>
-                                  setPracticeAnswers((current) => ({
-                                    ...current,
-                                    [activePracticeTest.key]: {
-                                      ...(current[activePracticeTest.key] ?? {}),
-                                      [item.id]: optionIndex,
-                                    },
-                                  }))
-                                }
-                              >
-                                <span>{String.fromCharCode(65 + optionIndex)}</span>
-                                {option}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <div key={activeQuestion.id} className="practice-question">
+                      <div className="practice-question-head">
+                        <span>Question {activeQuestionIndex + 1}</span>
+                        {selectedAnswer !== undefined ? (
+                          <strong className={selectedAnswer === activeQuestion.answer ? "mint-text" : "gold-text"}>
+                            {selectedAnswer === activeQuestion.answer ? "Correct" : "Review"}
+                          </strong>
+                        ) : null}
+                      </div>
+                      <p>{activeQuestion.question}</p>
+                      <div className="practice-options">
+                        {activeQuestion.options.map((option, optionIndex) => (
+                          <button
+                            key={option}
+                            className={`practice-option${selectedAnswer === optionIndex ? " selected" : ""}${
+                              selectedAnswer !== undefined && activeQuestion.answer === optionIndex ? " correct" : ""
+                            }`}
+                            type="button"
+                            onClick={() => {
+                              setPracticeAnswers((current) => ({
+                                ...current,
+                                [activePracticeTest.key]: {
+                                  ...(current[activePracticeTest.key] ?? {}),
+                                  [activeQuestion.id]: optionIndex,
+                                },
+                              }));
+
+                              if (activeQuestionIndex < activeQuestions.length - 1) {
+                                window.setTimeout(() => {
+                                  setActivePracticeTest((current) =>
+                                    current?.key === activePracticeTest.key && current.questionIndex === activeQuestionIndex
+                                      ? { ...current, questionIndex: Math.min(activeQuestions.length - 1, activeQuestionIndex + 1) }
+                                      : current,
+                                  );
+                                }, 450);
+                              }
+                            }}
+                          >
+                            <span>{String.fromCharCode(65 + optionIndex)}</span>
+                            {option}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               );
