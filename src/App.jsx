@@ -1606,6 +1606,7 @@ function App() {
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "Applicant" });
   const [authFeedback, setAuthFeedback] = useState("");
   const [roadmapGenerationRequestId, setRoadmapGenerationRequestId] = useState(0);
+  const latestRoadmapRequestKeyRef = useRef("");
   const [announcementForm, setAnnouncementForm] = useState({
     tag: "Update",
     label: "Announcement",
@@ -2461,6 +2462,8 @@ function App() {
 
     let cancelled = false;
     let enhancementTimeoutId = null;
+    latestRoadmapRequestKeyRef.current = roadmapRequestKey;
+    const isStaleRoadmapRun = () => cancelled || latestRoadmapRequestKeyRef.current !== roadmapRequestKey;
 
     const roadmapPayload = {
       profile: {
@@ -2513,8 +2516,10 @@ function App() {
           .filter(Boolean),
       );
       const activeJob = roadmapPayload.jobs.find((job) => String(job.id) === activeRoadmapJobId) ?? roadmapPayload.jobs[0] ?? null;
-      const missingJobs = activeJob && !cachedMap.has(String(activeJob.id)) ? [activeJob] : [];
       const shouldGenerateMissingJobs = roadmapGenerationRequestId > 0;
+      const activeJobId = activeJob ? String(activeJob.id) : "";
+      const shouldRefreshActiveJob = shouldGenerateMissingJobs && Boolean(activeJobId);
+      const missingJobs = activeJob && (!cachedMap.has(activeJobId) || shouldRefreshActiveJob) ? [activeJob] : [];
       const fallbackByJobId = new Map(immediateRoadmaps.map((roadmap) => [String(roadmap.job_id), roadmap]));
       const immediateMergedRoadmaps = roadmapCandidateJobIds
         .map((jobId) => cachedMap.get(String(jobId))?.[0] ?? fallbackByJobId.get(String(jobId)))
@@ -2526,7 +2531,7 @@ function App() {
         .at(-1);
       const hasCachedAiRoadmap = cachedRows.some((row) => row.status && row.status !== "Planned");
       const generationTotal = missingJobs.length > 0 ? 1 : activeJob ? 1 : 0;
-      const cachedCount = activeJob && cachedMap.has(String(activeJob.id)) ? 1 : 0;
+      const cachedCount = activeJob && cachedMap.has(activeJobId) && !shouldRefreshActiveJob ? 1 : 0;
       const initialProgress = buildRoadmapProgress(cachedCount, generationTotal);
 
       setState((current) => ({
@@ -2561,10 +2566,10 @@ function App() {
       }
 
       enhancementTimeoutId = window.setTimeout(() => {
-        if (cancelled) return;
+        if (isStaleRoadmapRun()) return;
 
         setState((current) => {
-          if (current.roadmapStatus.lastGeneratedKey !== roadmapRequestKey) return current;
+          if (isStaleRoadmapRun()) return current;
 
           return {
             ...current,
@@ -2631,7 +2636,7 @@ function App() {
             }
 
             setState((current) => {
-              if (current.roadmapStatus.lastGeneratedKey !== roadmapRequestKey) return current;
+              if (isStaleRoadmapRun()) return current;
 
               const nextRoadmaps = current.careerRoadmaps
                 .map((roadmap) => (String(roadmap.job_id) === String(taggedRoadmap.job_id) ? taggedRoadmap : roadmap))
@@ -2654,7 +2659,7 @@ function App() {
         } catch (error) {
           results.push({ status: "rejected", reason: error, jobId: job.id });
           setState((current) => {
-            if (current.roadmapStatus.lastGeneratedKey !== roadmapRequestKey) return current;
+            if (isStaleRoadmapRun()) return current;
 
             const completedProgress = buildRoadmapProgress(cachedCount + results.length, generationTotal);
             return {
@@ -2684,7 +2689,7 @@ function App() {
       );
 
       setState((current) => {
-        if (current.roadmapStatus.lastGeneratedKey !== roadmapRequestKey) return current;
+        if (isStaleRoadmapRun()) return current;
 
         return {
           ...current,
