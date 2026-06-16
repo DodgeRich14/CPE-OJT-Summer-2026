@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   ChevronUp,
+  CircleHelp,
   Compass,
   CreditCard,
   DollarSign,
@@ -53,6 +54,49 @@ const trainingTabs = [
   { id: "progress", label: "Training" },
   { id: "mentorship", label: "Mentorship" },
   { id: "certifications", label: "Certifications" },
+];
+
+const helpFaqs = [
+  {
+    question: "How do I look for jobs or opportunities?",
+    answer: "Open Discover, choose a category, then use search and filters to browse recommended roles. Click a listing to review details, match score, required skills, and application actions.",
+  },
+  {
+    question: "How do I apply for a role?",
+    answer: "From Discover, open a job card and use the apply action. Applied roles are moved into Applications so you can track their status and progress.",
+  },
+  {
+    question: "Where can I see my saved and applied jobs?",
+    answer: "Go to Applications. Use the Applied and Saved tabs to switch between roles you already applied to and roles you saved for later review.",
+  },
+  {
+    question: "Why are Roadmap and Development locked?",
+    answer: "Roadmap and Development are premium applicant features. Free applicants can still use Discover, Applications, and Subscription, while subscribed applicants can unlock career roadmaps, training modules, mentorship, and certifications.",
+  },
+  {
+    question: "How do I generate a career roadmap?",
+    answer: "Apply to up to three jobs first, then open Roadmap and click Generate Roadmap. The system creates guided steps based on your applied jobs and profile context.",
+  },
+  {
+    question: "What is inside Development?",
+    answer: "Development contains Training, Mentorship, and Certifications. Training shows course progress and module quizzes, Mentorship lists mentor-led courses, and Certifications links practice resources and official portals.",
+  },
+  {
+    question: "How do I take a practice quiz?",
+    answer: "Open Development, choose Training, then click Start Practice Test on a course module. Use the arrow buttons to move through questions; the quiz advances after each answer.",
+  },
+  {
+    question: "How do I subscribe?",
+    answer: "Open Subscription from the sidebar, review the premium benefits, then use the subscription action. After activation, premium pages become available to your applicant account.",
+  },
+  {
+    question: "How do I update my profile or resume?",
+    answer: "Click your profile area in the sidebar. From the profile panel, update your personal information, skills, experience, certificates, resume details, and password settings.",
+  },
+  {
+    question: "What can admins do?",
+    answer: "Admin accounts use a separate dashboard for user management, course management, certification approvals, mentor and employer verification, analytics, revenue, and content management.",
+  },
 ];
 
 const adminSidebarItems = [
@@ -1681,6 +1725,7 @@ function App() {
   const [isRenewalNoticeDismissed, setIsRenewalNoticeDismissed] = useState(false);
   const [closingJobModal, setClosingJobModal] = useState(false);
   const [jobNavigationDirection, setJobNavigationDirection] = useState(null);
+  const [helpPanelOpen, setHelpPanelOpen] = useState(false);
   const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
   const isStudent = state.auth.isAuthenticated && state.auth.accountRole === "Student";
   const hasActiveSubscription = state.auth.isAuthenticated && state.subscription?.status === "active";
@@ -5747,7 +5792,7 @@ function App() {
                         <button
                           className="roadmap-cta module-test-button"
                           type="button"
-                          onClick={() => setActivePracticeTest({ key: practiceKey, title: card.title, questions: cardQuestions, questionIndex: 0 })}
+                          onClick={() => setActivePracticeTest({ key: practiceKey, title: card.title, questions: cardQuestions, questionIndex: 0, navDirection: "next" })}
                         >
                           {answeredCount > 0 ? "Continue Practice Test" : "Start Practice Test"}
                         </button>
@@ -6173,6 +6218,50 @@ function App() {
         )}
       </main>
 
+      <button
+        className="help-fab"
+        type="button"
+        aria-label="Open help and frequently asked questions"
+        onClick={() => setHelpPanelOpen(true)}
+      >
+        <CircleHelp size={24} />
+      </button>
+
+      {helpPanelOpen && (
+        <div className="profile-overlay job-modal-overlay help-overlay" onClick={() => setHelpPanelOpen(false)}>
+          <aside className="profile-panel job-modal help-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="profile-panel-header help-panel-header">
+              <div>
+                <span className="section-kicker">Help Center</span>
+                <h2>Frequently Asked Questions</h2>
+              </div>
+              <button className="profile-close" type="button" onClick={() => setHelpPanelOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="profile-panel-body help-panel-body">
+              <div className="help-intro">
+                <CircleHelp size={20} />
+                <div>
+                  <strong>Need a quick guide?</strong>
+                  <p>Use these FAQs to navigate SkillBridge and understand the main applicant and admin workflows.</p>
+                </div>
+              </div>
+
+              <div className="faq-list">
+                {helpFaqs.map((item) => (
+                  <details key={item.question} className="faq-item">
+                    <summary>{item.question}</summary>
+                    <p>{item.answer}</p>
+                  </details>
+                ))}
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+
       {activePracticeTest && (
         <div className="profile-overlay job-modal-overlay" onClick={() => setActivePracticeTest(null)}>
           <aside className="profile-panel job-modal practice-test-modal" onClick={(event) => event.stopPropagation()}>
@@ -6191,55 +6280,12 @@ function App() {
               const activeQuestionIndex = Math.min(activePracticeTest.questionIndex ?? 0, activeQuestions.length - 1);
               const activeQuestion = activeQuestions[activeQuestionIndex];
               const activeAnswers = practiceAnswers[activePracticeTest.key] ?? {};
-              const answeredCount = activeQuestions.filter((item) => activeAnswers[item.id] !== undefined).length;
-              const correctCount = activeQuestions.filter((item) => activeAnswers[item.id] === item.answer).length;
               const selectedAnswer = activeAnswers[activeQuestion.id];
 
               return (
                 <div className="profile-panel-body practice-test-body">
-                  <div className="practice-test-summary">
-                    <div className="module-score">
-                      <strong>{correctCount}/{activeQuestions.length}</strong>
-                      <span>score</span>
-                    </div>
-                    <div>
-                      <h3>10-item Multiple Choice Test</h3>
-                      <p>{answeredCount} of {activeQuestions.length} questions answered. Select an option to get instant feedback.</p>
-                    </div>
-                  </div>
-
                   <div className="practice-question-stage">
-                    <div className="practice-question-nav">
-                      <button
-                        className="job-nav-button"
-                        type="button"
-                        aria-label="Previous question"
-                        disabled={activeQuestionIndex === 0}
-                        onClick={() =>
-                          setActivePracticeTest((current) =>
-                            current ? { ...current, questionIndex: Math.max(0, activeQuestionIndex - 1) } : current,
-                          )
-                        }
-                      >
-                        <ChevronLeft size={18} />
-                      </button>
-                      <span>{activeQuestionIndex + 1} / {activeQuestions.length}</span>
-                      <button
-                        className="job-nav-button"
-                        type="button"
-                        aria-label="Next question"
-                        disabled={activeQuestionIndex >= activeQuestions.length - 1}
-                        onClick={() =>
-                          setActivePracticeTest((current) =>
-                            current ? { ...current, questionIndex: Math.min(activeQuestions.length - 1, activeQuestionIndex + 1) } : current,
-                          )
-                        }
-                      >
-                        <ChevronRight size={18} />
-                      </button>
-                    </div>
-
-                    <div key={activeQuestion.id} className="practice-question">
+                    <div key={activeQuestion.id} className={`practice-question slide-${activePracticeTest.navDirection ?? "next"}`}>
                       <div className="practice-question-head">
                         <span>Question {activeQuestionIndex + 1}</span>
                         {selectedAnswer !== undefined ? (
@@ -6270,7 +6316,7 @@ function App() {
                                 window.setTimeout(() => {
                                   setActivePracticeTest((current) =>
                                     current?.key === activePracticeTest.key && current.questionIndex === activeQuestionIndex
-                                      ? { ...current, questionIndex: Math.min(activeQuestions.length - 1, activeQuestionIndex + 1) }
+                                      ? { ...current, questionIndex: Math.min(activeQuestions.length - 1, activeQuestionIndex + 1), navDirection: "next" }
                                       : current,
                                   );
                                 }, 450);
@@ -6282,6 +6328,35 @@ function App() {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    <div className="practice-question-nav">
+                      <button
+                        className="practice-arrow-button previous"
+                        type="button"
+                        aria-label="Previous question"
+                        disabled={activeQuestionIndex === 0}
+                        onClick={() =>
+                          setActivePracticeTest((current) =>
+                            current ? { ...current, questionIndex: Math.max(0, activeQuestionIndex - 1), navDirection: "previous" } : current,
+                          )
+                        }
+                      >
+                        &lt;
+                      </button>
+                      <button
+                        className="practice-arrow-button next"
+                        type="button"
+                        aria-label="Next question"
+                        disabled={activeQuestionIndex >= activeQuestions.length - 1}
+                        onClick={() =>
+                          setActivePracticeTest((current) =>
+                            current ? { ...current, questionIndex: Math.min(activeQuestions.length - 1, activeQuestionIndex + 1), navDirection: "next" } : current,
+                          )
+                        }
+                      >
+                        &gt;
+                      </button>
                     </div>
                   </div>
                 </div>
