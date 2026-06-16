@@ -34,6 +34,7 @@ import { buildCareerRoadmapFallback, fetchCareerRoadmaps, fetchLiveJobs, fetchRe
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
 const STORAGE_KEY = "skillbridge-career-studio";
+const PENDING_OAUTH_ROLE_KEY = "skillbridge-pending-oauth-role";
 const DEMO_ACCOUNT_EMAIL = "justine.alonzo@student.skillbridge.ph";
 const applicationStages = ["Applied", "Reviewed", "Shortlisted", "Interview", "Offer"];
 const ROADMAP_ENHANCEMENT_TIMEOUT_MS = 30000;
@@ -130,6 +131,12 @@ function normalizeCategoryForState(category) {
   if (category === "Internship") return "internships";
   if (category === "Volunteer") return "volunteer";
   return "jobs";
+}
+
+function normalizePublicSignupRole(role) {
+  return ["Applicant", "Student", "Employer"].includes(String(role || "").trim())
+    ? String(role).trim()
+    : "Applicant";
 }
 
 function mapStateCategoryToDbCategory(category) {
@@ -543,32 +550,6 @@ function computeLocationMatchScore(profile, listing) {
   return 20;
 }
 
-function computeFreshnessScore(postedLabel) {
-  const label = String(postedLabel || "").toLowerCase();
-  if (label.includes("today")) return 100;
-  if (label.includes("1 day")) return 95;
-
-  const dayMatch = label.match(/(\d+)\s+days?\s+ago/);
-  if (dayMatch) {
-    const days = Number(dayMatch[1]);
-    if (days <= 3) return 90;
-    if (days <= 7) return 80;
-    if (days <= 14) return 68;
-    if (days <= 30) return 55;
-    return 40;
-  }
-
-  const weekMatch = label.match(/(\d+)\s+weeks?\s+ago/);
-  if (weekMatch) {
-    const weeks = Number(weekMatch[1]);
-    if (weeks <= 2) return 64;
-    if (weeks <= 4) return 52;
-    return 38;
-  }
-
-  return 45;
-}
-
 function getScoreToneClass(score) {
   if (score >= 80) return "score-green";
   if (score >= 60) return "score-yellow";
@@ -577,9 +558,8 @@ function getScoreToneClass(score) {
 
 const matchScoreFactors = [
   { key: "job_title_match", label: "Job title fit", weight: 35 },
-  { key: "skill_match", label: "Skill match", weight: 35 },
+  { key: "skill_match", label: "Skill match", weight: 40 },
   { key: "description_similarity", label: "Description fit", weight: 25 },
-  { key: "freshness", label: "Posting freshness", weight: 5 },
 ];
 
 function MatchScore({ listing, theme = "dark" }) {
@@ -766,13 +746,11 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
   const skillAlignmentScore = clampScore(Math.round(specificCoverageRatio * 85 + genericCoverageRatio * 15), 0, 100);
   const titleMatchScore = computeJobTitleMatchScore(profile, listing);
   const descriptionSimilarityScore = computeDescriptionSimilarityScore(profile, listing, rawMatchedSkills);
-  const freshnessScore = computeFreshnessScore(listing.posted);
   const fallbackScore = Math.round(
     computeWeightedAverageScore([
       { score: titleMatchScore, weight: 0.35 },
-      { score: skillAlignmentScore, weight: 0.35 },
+      { score: skillAlignmentScore, weight: 0.4 },
       { score: descriptionSimilarityScore, weight: 0.25 },
-      { score: freshnessScore, weight: 0.05 },
     ]),
   );
   const evidenceCeiling = getSkillEvidenceCeiling(requiredSkills.length, matchedCount, 0, 0);
@@ -788,7 +766,6 @@ function computeListingSimilarity(listing, profile, recommendation = null) {
       job_title_match: titleMatchScore,
       skill_match: skillAlignmentScore,
       description_similarity: descriptionSimilarityScore,
-      freshness: freshnessScore,
       weightedTotal: clampScore(fallbackScore),
       evidenceCeiling,
       limitedByEvidence: evidenceCeiling < fallbackScore,
@@ -1592,6 +1569,18 @@ function createProfileUpdatePayload(profile) {
   };
 }
 
+function setPendingOauthRole(role) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(PENDING_OAUTH_ROLE_KEY, normalizePublicSignupRole(role));
+}
+
+function consumePendingOauthRole() {
+  if (typeof window === "undefined") return null;
+  const role = window.localStorage.getItem(PENDING_OAUTH_ROLE_KEY);
+  window.localStorage.removeItem(PENDING_OAUTH_ROLE_KEY);
+  return role ? normalizePublicSignupRole(role) : null;
+}
+
 async function persistProfileRecord(accountId, profile) {
   if (!hasSupabaseConfig || !supabase || !accountId) return;
 
@@ -1812,14 +1801,16 @@ function App() {
         return;
       }
 
+      const pendingOauthRole = !profileRecord ? consumePendingOauthRole() : null;
       const mappedProfile = mapProfileRecordToState(profileRecord, session.user);
+      const effectiveRole = profileRecord?.role || pendingOauthRole || mappedProfile.role;
 
       if (!profileRecord && hasSupabaseConfig && supabase) {
         const fallbackProfile = {
-          ...createBaseUserProfile(mappedProfile.role),
+          ...createBaseUserProfile(effectiveRole),
           ...mappedProfile,
           email: session.user.email || mappedProfile.email,
-          role: mappedProfile.role,
+          role: effectiveRole,
         };
 
         try {
@@ -1857,24 +1848,26 @@ function App() {
         }
       }
 
+      const nextProfile = profileRecord ? mappedProfile : { ...mappedProfile, role: effectiveRole };
+
       setState((current) => ({
         ...current,
         authModalOpen: false,
         authMode: "login",
-        activeSidebar: mappedProfile.role === "Admin" ? "analytics" : current.activeSidebar === "analytics" ? "discover" : current.activeSidebar,
+        activeSidebar: nextProfile.role === "Admin" ? "analytics" : current.activeSidebar === "analytics" ? "discover" : current.activeSidebar,
         auth: {
           ...current.auth,
           isAuthenticated: true,
           accountId: session.user.id,
-          accountName: mappedProfile.fullName,
-          accountEmail: mappedProfile.email,
-          accountRole: mappedProfile.role,
+          accountName: nextProfile.fullName,
+          accountEmail: nextProfile.email,
+          accountRole: nextProfile.role,
           password: "",
         },
         subscription: subscriptionState,
-        profile: mappedProfile,
-        profileExperience: Array.isArray(mappedProfile.aiProfile?.experience_entries)
-          ? mappedProfile.aiProfile.experience_entries.map((item, index) => ({
+        profile: nextProfile,
+        profileExperience: Array.isArray(nextProfile.aiProfile?.experience_entries)
+          ? nextProfile.aiProfile.experience_entries.map((item, index) => ({
               id: item.id || `${session.user.id}-resume-${index}`,
               title: item.title || "Resume experience",
               company: item.company || "Resume entry",
@@ -3421,7 +3414,7 @@ function App() {
       email: mode === "login" || mode === "forgot" ? state.auth.accountEmail : "",
       password: "",
       confirmPassword: "",
-      role: mode === "signup" ? state.auth.accountRole ?? "Applicant" : "Applicant",
+      role: mode === "signup" ? normalizePublicSignupRole(state.auth.accountRole) : "Applicant",
     });
     setState((current) => ({
       ...current,
@@ -3436,6 +3429,30 @@ function App() {
       ...current,
       authModalOpen: false,
     }));
+  }
+
+  async function continueWithGoogle() {
+    if (!hasSupabaseConfig || !supabase) {
+      setAuthFeedback("Google sign-in requires Supabase to be configured.");
+      return;
+    }
+
+    const selectedRole = state.authMode === "signup" ? normalizePublicSignupRole(authForm.role) : "Applicant";
+    setPendingOauthRole(selectedRole);
+
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: window.location.origin,
+        queryParams: {
+          prompt: "select_account",
+        },
+      },
+    });
+
+    if (error) {
+      setAuthFeedback(error.message || "Unable to continue with Google.");
+    }
   }
 
   async function updateAdminCollection(key, itemId, field, value) {
@@ -4286,7 +4303,13 @@ function App() {
         });
 
         if (error) {
-          setAuthFeedback(error.message || "Unable to log in with that account.");
+          const message = String(error.message || "");
+          if (/email.*not.*confirm/i.test(message)) {
+            setAuthFeedback("Verify your email from your inbox before logging in.");
+            return;
+          }
+
+          setAuthFeedback(message || "Unable to log in with that account.");
           return;
         }
 
@@ -4295,7 +4318,7 @@ function App() {
         if (userId) {
           const { data: profileRecord, error: profileError } = await supabase
             .from("profiles")
-            .select("status, email")
+            .select("*")
             .eq("id", userId)
             .maybeSingle();
 
@@ -4366,75 +4389,40 @@ function App() {
     const firstName = nameParts[0] || "Applicant";
     const lastName = nameParts.slice(1).join(" ") || "User";
     const username = `@${fullName.toLowerCase().replace(/\s+/g, ".")}`;
-    const role = authForm.role || "Applicant";
+    const role = normalizePublicSignupRole(authForm.role);
 
     if (hasSupabaseConfig && supabase) {
       const email = authForm.email.trim().toLowerCase();
-      let createdUserId = "";
-
-      try {
-        const { data, error } = await supabase.functions.invoke("register-user", {
-          body: {
-            email,
-            password: authForm.password,
-            fullName,
-            firstName,
-            lastName,
-            role,
-          },
-        });
-
-        if (error) {
-          setAuthFeedback(error.message || "Unable to create your account.");
-          return;
-        } else if (data?.error) {
-          setAuthFeedback(data.error || "Unable to create your account.");
-          return;
-        } else {
-          createdUserId = data?.user?.id ?? "";
-        }
-      } catch {
-        setAuthFeedback("Unable to create your account.");
-        return;
-      }
-
-      const { data: sessionData, error: signInError } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signUp({
         email,
         password: authForm.password,
+        options: {
+          data: {
+            full_name: fullName,
+            first_name: firstName,
+            last_name: lastName,
+            role,
+            username,
+          },
+          emailRedirectTo: window.location.origin,
+        },
       });
 
-      if (signInError) {
-        setAuthFeedback(signInError.message || "Account created, but automatic login failed.");
+      if (error) {
+        setAuthFeedback(error.message || "Unable to create your account.");
         return;
       }
 
-      const userId = sessionData.session?.user?.id ?? createdUserId;
-
-      if (userId) {
-        const nextProfile = {
-          ...createBaseUserProfile(role),
-          fullName,
-          username,
-          email,
-          firstName,
-          lastName,
-          role,
-        };
-
-        supabase
-          .from("profiles")
-          .upsert(
-            {
-              id: userId,
-              ...createProfileUpdatePayload(nextProfile),
-              status: "Active",
-            },
-            { onConflict: "id" },
-          )
-          .catch(() => {});
-      }
-
-      setAuthFeedback("");
+      setAuthFeedback("Account created. Verify your email from your inbox before logging in.");
+      setAuthForm((current) => ({
+        ...current,
+        password: "",
+        confirmPassword: "",
+      }));
+      setState((current) => ({
+        ...current,
+        authMode: "login",
+      }));
       return;
     }
 
@@ -6936,7 +6924,7 @@ function App() {
                   </strong>
                   <span>
                     {state.authMode === "signup"
-                      ? "Start applying and saving roles"
+                      ? "Create your account, then verify it from your email inbox"
                       : state.authMode === "forgot"
                         ? "Send a secure reset link to your email"
                         : state.authMode === "reset"
@@ -6987,7 +6975,7 @@ function App() {
                     <div className="profile-field full">
                       <span>User Role</span>
                       <div className="auth-role-row">
-                        {["Applicant", "Student", "Employer", "Admin"].map((role) => (
+                        {["Applicant", "Student", "Employer"].map((role) => (
                           <button
                             key={role}
                             className={`auth-role-button${authForm.role === role ? " active" : ""}`}
@@ -7055,6 +7043,13 @@ function App() {
                 {(state.authMode === "forgot" || state.authMode === "reset") && (
                   <button className="auth-inline-link" type="button" onClick={() => openAuthModal("login")}>
                     Back to login
+                  </button>
+                )}
+
+                {(state.authMode === "login" || state.authMode === "signup") && (
+                  <button className="profile-dashed-button" type="button" onClick={continueWithGoogle}>
+                    <Globe size={14} />
+                    Continue with Google
                   </button>
                 )}
 

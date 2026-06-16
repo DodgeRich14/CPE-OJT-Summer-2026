@@ -467,22 +467,6 @@ function computeLocationMatchScore(profile: Record<string, unknown>, job: Record
   return 20;
 }
 
-function computeFreshnessScore(postedAt: unknown) {
-  if (!postedAt) return 45;
-
-  const date = new Date(String(postedAt));
-  if (Number.isNaN(date.getTime())) return 45;
-
-  const diffDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)));
-  if (diffDays === 0) return 100;
-  if (diffDays === 1) return 95;
-  if (diffDays <= 3) return 90;
-  if (diffDays <= 7) return 80;
-  if (diffDays <= 14) return 68;
-  if (diffDays <= 30) return 55;
-  return 40;
-}
-
 function getDomainAlignmentScore(
   profile: Record<string, unknown>,
   resumeProfile: Record<string, unknown>,
@@ -661,16 +645,14 @@ Deno.serve(async (req) => {
           index < semanticCandidateJobs.length && applicantEmbedding && semanticJobEmbeddings[index]
             ? semanticSimilarityToScore(cosineSimilarity(applicantEmbedding, semanticJobEmbeddings[index])) ?? fallbackDescriptionSimilarityScore
             : fallbackDescriptionSimilarityScore;
-        const freshnessScore = computeFreshnessScore(job.posted_at);
         const domainAlignmentScore = getDomainAlignmentScore(profile, resumeProfile, job, rawMatchedSkills, requiredSkills);
         const experienceAlignmentScore = getExperienceAlignmentScore(profile, resumeProfile, job);
 
         let matchScore = Math.round(
           computeWeightedAverageScore([
             { score: titleMatchScore, weight: 0.35 },
-            { score: skillAlignmentScore, weight: 0.35 },
+            { score: skillAlignmentScore, weight: 0.4 },
             { score: descriptionSimilarityScore, weight: 0.25 },
-            { score: freshnessScore, weight: 0.05 },
           ]),
         );
 
@@ -703,7 +685,6 @@ Deno.serve(async (req) => {
             job_title_match: Math.round(titleMatchScore),
             skill_match: Math.round(skillAlignmentScore),
             description_similarity: Math.round(descriptionSimilarityScore),
-            freshness: Math.round(freshnessScore),
           },
           reason: buildRecommendationReason(job, matchedSkills, skillGaps, descriptionSimilarityScore),
         };

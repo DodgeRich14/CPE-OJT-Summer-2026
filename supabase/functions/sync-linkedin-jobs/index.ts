@@ -57,6 +57,20 @@ const skillDictionary = [
   "social media",
   "copywriting",
   "graphic design",
+  "visual design",
+  "branding",
+  "layout design",
+  "illustration",
+  "digital illustration",
+  "multimedia",
+  "video editing",
+  "motion graphics",
+  "photography",
+  "adobe photoshop",
+  "adobe illustrator",
+  "adobe indesign",
+  "after effects",
+  "premiere pro",
   "photoshop",
   "illustrator",
   "excel",
@@ -142,20 +156,44 @@ type GenericJobDetail = {
 
 const defaultDiverseKeywords = [
   "software engineer",
+  "frontend developer",
+  "backend developer",
+  "full stack developer",
+  "web developer",
   "embedded systems",
+  "firmware engineer",
+  "iot engineer",
   "data analyst",
+  "data engineer",
   "qa tester",
+  "quality assurance engineer",
   "business analyst",
   "operations associate",
   "marketing assistant",
   "customer service",
   "graphic designer",
+  "visual designer",
+  "creative designer",
+  "multimedia artist",
+  "layout artist",
+  "illustrator",
+  "video editor",
+  "ui ux designer",
+  "product designer",
+  "interior design assistant",
+  "industrial design intern",
+  "fine arts internship",
+  "museum assistant",
+  "gallery assistant",
+  "exhibit design assistant",
+  "photography assistant",
   "hr assistant",
   "admin assistant",
   "finance associate",
   "internship",
   "ojt",
 ];
+const DEFAULT_KEYWORD_BATCH_SIZE = 18;
 
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -169,6 +207,15 @@ function jsonResponse(body: unknown, status = 200) {
 
 function normalizeSpace(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function shuffleArray<T>(values: T[]) {
+  const copy = [...values];
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+  }
+  return copy;
 }
 
 function escapeRegex(value: string) {
@@ -420,17 +467,19 @@ function buildGenericJobRecord(detail: GenericJobDetail, sourcePlatform: string)
   };
 }
 
-function normalizeKeywordList(input: unknown) {
+function normalizeKeywordList(input: unknown, batchSize = DEFAULT_KEYWORD_BATCH_SIZE, randomize = true) {
   if (Array.isArray(input)) {
-    const normalized = input.map((value) => normalizeSpace(String(value ?? ""))).filter(Boolean);
-    return Array.from(new Set(normalized)).slice(0, 16);
+    const normalized = Array.from(new Set(input.map((value) => normalizeSpace(String(value ?? ""))).filter(Boolean)));
+    const keywords = randomize ? shuffleArray(normalized) : normalized;
+    return keywords.slice(0, Math.max(1, Math.min(batchSize, keywords.length || batchSize)));
   }
 
   if (typeof input === "string" && normalizeSpace(input)) {
     return [normalizeSpace(input)];
   }
 
-  return defaultDiverseKeywords;
+  const keywords = randomize ? shuffleArray(defaultDiverseKeywords) : defaultDiverseKeywords;
+  return keywords.slice(0, Math.max(1, Math.min(batchSize, keywords.length)));
 }
 
 function matchesSourceFilter(sourcePlatform: string, sourceFilter: string) {
@@ -1068,19 +1117,24 @@ Deno.serve(async (req) => {
   const serpApiKey = Deno.env.get("SERPAPI_API_KEY");
   const scraperApiKey = Deno.env.get("SCRAPERAPI_KEY");
   const jobSyncSecret = Deno.env.get("JOB_SYNC_SECRET");
+  const fallbackJobSyncSecret = Deno.env.get("JOB_SYNC_SECRET_FALLBACK");
 
   const providedSecret = req.headers.get("x-job-sync-secret");
-  if (!supabaseUrl || !serviceRoleKey || !jobSyncSecret) {
+  const validSecrets = [jobSyncSecret, fallbackJobSyncSecret].map((value) => String(value || "").trim()).filter(Boolean);
+
+  if (!supabaseUrl || !serviceRoleKey || validSecrets.length === 0) {
     return jsonResponse({ error: "Missing required function secrets." }, 500);
   }
 
-  if (providedSecret !== jobSyncSecret) {
+  if (!validSecrets.includes(String(providedSecret || "").trim())) {
     return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
   const body = await req.json().catch(() => ({}));
-  const keywords = normalizeKeywordList(body.keywords ?? body.keyword);
+  const randomizeKeywords = body.randomizeKeywords !== false;
+  const keywordBatchSize = Math.min(Math.max(Number(body.keywordBatchSize ?? DEFAULT_KEYWORD_BATCH_SIZE), 6), 30);
+  const keywords = normalizeKeywordList(body.keywords ?? body.keyword, keywordBatchSize, randomizeKeywords);
   const location = normalizeSpace(body.location ?? "Philippines");
   const pages = Math.min(Math.max(Number(body.pages ?? 1), 1), 3);
   const jobsPerPage = Math.min(Math.max(Number(body.jobsPerPage ?? 12), 1), 20);
@@ -1300,7 +1354,7 @@ Deno.serve(async (req) => {
       throw upsertError;
     }
 
-    if (!["aggregate", "searchapi", "serpapi"].includes(provider)) {
+    if (dedupedJobs.length > 0) {
       const staleCleanupThreshold = new Date(Date.now() - 1000 * 60 * 60 * 24 * closeStaleAfterDays).toISOString();
       const activeSourceIds = dedupedJobs.map((job) => String(job.source_job_id)).filter(Boolean);
       let staleCleanupQuery = supabase

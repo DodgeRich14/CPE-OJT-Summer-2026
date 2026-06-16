@@ -437,22 +437,6 @@ function computeLocationMatchScore(profile, job) {
   return 20;
 }
 
-function computeFreshnessScore(postedAt) {
-  if (!postedAt) return 45;
-
-  const date = new Date(postedAt);
-  if (Number.isNaN(date.getTime())) return 45;
-
-  const diffDays = Math.max(0, Math.floor((Date.now() - date.getTime()) / (1000 * 60 * 60 * 24)));
-  if (diffDays === 0) return 100;
-  if (diffDays === 1) return 95;
-  if (diffDays <= 3) return 90;
-  if (diffDays <= 7) return 80;
-  if (diffDays <= 14) return 68;
-  if (diffDays <= 30) return 55;
-  return 40;
-}
-
 function filterSpecificMatchedSkills(skills) {
   return [...new Set((skills ?? []).filter((skill) => !isGenericSkill(skill)))];
 }
@@ -600,14 +584,12 @@ function computeRecommendationFallback(payload, jobs) {
       const skillAlignmentScore = clampScore(Math.round(specificCoverage * 85 + genericCoverage * 15), 0, 100);
       const titleMatchScore = computeJobTitleMatchScore(profile, resumeProfile, job);
       const descriptionSimilarityScore = computeDescriptionSimilarityScore(profile, resumeProfile, job, requiredSkills, rawMatchedSkills);
-      const freshnessScore = computeFreshnessScore(job.posted_at);
       const skillGaps = requiredSkills.filter((required) => !getOverlapMatches(rawMatchedSkills, [required]).length);
       let rawScore = Math.round(
         computeWeightedAverageScore([
           { score: titleMatchScore, weight: 0.35 },
-          { score: skillAlignmentScore, weight: 0.35 },
+          { score: skillAlignmentScore, weight: 0.4 },
           { score: descriptionSimilarityScore, weight: 0.25 },
-          { score: freshnessScore, weight: 0.05 },
         ]),
       );
       if (profileSkills.length > 0 && specificMatchedSkills.length === 0) {
@@ -639,7 +621,6 @@ function computeRecommendationFallback(payload, jobs) {
           job_title_match: Math.round(titleMatchScore),
           skill_match: Math.round(skillAlignmentScore),
           description_similarity: Math.round(descriptionSimilarityScore),
-          freshness: Math.round(freshnessScore),
         },
         reason,
       };
