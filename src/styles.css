@@ -822,6 +822,211 @@ select:focus-visible {
   color: var(--text);
 }
 
+.learning-module {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid rgba(92, 101, 144, 0.16);
+  border-radius: 16px;
+  background: var(--panel-soft);
+}
+
+.learning-module-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.learning-module-head h4 {
+  margin: 4px 0 0;
+  font-size: 1rem;
+  line-height: 1.25;
+}
+
+.learning-module-head p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.module-score {
+  min-width: 88px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  text-align: center;
+}
+
+.module-score strong {
+  display: block;
+  font-family: "Inter", sans-serif;
+  font-size: 1rem;
+}
+
+.module-score span {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.module-lesson-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.module-lesson-row span {
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: rgba(112, 103, 255, 0.08);
+  color: var(--muted);
+  font-family: "Inter", sans-serif;
+  font-size: 0.74rem;
+  text-align: center;
+}
+
+.module-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--muted);
+}
+
+.module-test-button {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.practice-test-modal {
+  width: min(1040px, calc(100vw - 48px));
+  height: min(86vh, 880px);
+  max-height: calc(100vh - 48px);
+  padding: 34px;
+}
+
+.practice-test-modal .profile-panel-header {
+  margin-bottom: 24px;
+  padding: 0 0 24px;
+}
+
+.practice-test-body {
+  display: grid;
+  gap: 24px;
+  padding: 0 4px 4px 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.practice-test-body::-webkit-scrollbar {
+  width: 10px;
+}
+
+.practice-test-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.practice-test-body::-webkit-scrollbar-thumb {
+  border: 3px solid var(--panel);
+  border-radius: 999px;
+  background: rgba(112, 103, 255, 0.38);
+}
+
+.practice-test-summary {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 20px;
+  align-items: center;
+  padding: 22px;
+  border: 1px solid rgba(92, 101, 144, 0.16);
+  border-radius: 18px;
+  background: var(--panel-soft);
+}
+
+.practice-test-summary h3 {
+  margin: 0 0 8px;
+}
+
+.practice-test-summary p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.practice-question-list {
+  display: grid;
+  gap: 18px;
+}
+
+.practice-question {
+  display: grid;
+  gap: 16px;
+  padding: 20px;
+  border: 1px solid rgba(92, 101, 144, 0.14);
+  border-radius: 18px;
+  background: var(--panel);
+}
+
+.practice-question-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-family: "Inter", sans-serif;
+  font-size: 0.72rem;
+}
+
+.practice-question p {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.practice-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.practice-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+  line-height: 1.3;
+}
+
+.practice-option span {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(112, 103, 255, 0.12);
+  color: var(--accent-chip);
+  font-family: "Inter", sans-serif;
+  font-size: 0.72rem;
+}
+
+.practice-option:hover,
+.practice-option.selected {
+  border-color: rgba(112, 103, 255, 0.38);
+  color: var(--text);
+  background: rgba(112, 103, 255, 0.08);
+}
+
+.practice-option.correct {
+  border-color: rgba(18, 217, 162, 0.36);
+}
+
 .progress-footer {
   display: flex;
   align-items: center;
@@ -3754,6 +3959,12 @@ select:focus-visible {
 }
 
 @media (max-width: 720px) {
+  .practice-test-modal {
+    width: min(100%, calc(100vw - 20px));
+    height: min(90vh, 820px);
+    padding: 22px;
+  }
+
   .mentor-rating,
   .certifications-section .cert-relevance {
     width: 100%;
@@ -3810,7 +4021,10 @@ select:focus-visible {
   .listing-actions,
   .application-actions,
   .cert-actions,
+  .module-lesson-row,
+  .practice-test-summary,
   .mentor-info-grid,
+  .practice-options,
   .ai-recommendation-row,
   .profile-grid,
   .profile-action-row,
@@ -3826,6 +4040,7 @@ select:focus-visible {
 
   .announcement-composer-head,
   .announcement-manager-card,
+  .module-action-row,
   .roadmap-job-head {
     flex-direction: column;
     align-items: stretch;

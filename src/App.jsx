@@ -42,14 +42,14 @@ const sidebarItems = [
   { id: "discover", label: "Discover", icon: Compass },
   { id: "applications", label: "Applications", icon: FileText },
   { id: "roadmap", label: "Roadmap", icon: MapIcon },
-  { id: "training", label: "Training", icon: BookOpen },
+  { id: "training", label: "Development", icon: BookOpen },
   { id: "subscription", label: "Subscription", icon: CreditCard },
 ];
 
 const premiumApplicantPages = ["training", "roadmap"];
 const legacyTrainingPages = ["progress", "mentorship", "certifications"];
 const trainingTabs = [
-  { id: "progress", label: "Progress" },
+  { id: "progress", label: "Training" },
   { id: "mentorship", label: "Mentorship" },
   { id: "certifications", label: "Certifications" },
 ];
@@ -1108,6 +1108,59 @@ const progressCards = [
   },
 ];
 
+const practiceTestQuestionsByCourse = {
+  "courses-1": [
+    { id: 1, question: "In GraphQL, what does a schema primarily define?", options: ["Database indexes", "Available types, fields, and operations", "Server deployment region", "CSS module boundaries"], answer: 1 },
+    { id: 2, question: "Which GraphQL operation is used to read data?", options: ["Mutation", "Subscription", "Query", "Resolver"], answer: 2 },
+    { id: 3, question: "What is the main role of a resolver?", options: ["Style UI components", "Fetch or compute data for a schema field", "Compress API responses", "Create database tables automatically"], answer: 1 },
+    { id: 4, question: "What does Apollo Client commonly manage in a frontend app?", options: ["GraphQL requests and normalized cache", "Operating system permissions", "DNS routing", "Git branching"], answer: 0 },
+    { id: 5, question: "Which operation should change server-side data?", options: ["Query", "Mutation", "Fragment", "Directive"], answer: 1 },
+    { id: 6, question: "What problem do GraphQL fragments help solve?", options: ["Duplicated field selections", "Expired SSL certificates", "Slow CSS selectors", "Untracked package versions"], answer: 0 },
+    { id: 7, question: "Which feature supports real-time updates in GraphQL?", options: ["Fragments", "Aliases", "Subscriptions", "Interfaces"], answer: 2 },
+    { id: 8, question: "What is overfetching?", options: ["Requesting more data than needed", "Caching too little data", "Sending invalid variables", "Running a query twice"], answer: 0 },
+    { id: 9, question: "Why are GraphQL variables preferred over string-building query values?", options: ["They improve type safety and reuse", "They remove the need for resolvers", "They make every query public", "They disable caching"], answer: 0 },
+    { id: 10, question: "What should be considered when designing production GraphQL APIs?", options: ["Only field names", "Auth, validation, pagination, and performance", "Button colors", "Browser zoom level"], answer: 1 },
+  ],
+  "courses-2": [
+    { id: 1, question: "What is a common cause of unnecessary React re-renders?", options: ["Stable props", "Unchanged memoized values", "Creating new object props every render", "Using semantic HTML"], answer: 2 },
+    { id: 2, question: "Which tool helps inspect component render performance?", options: ["React DevTools Profiler", "npm version", "CSS reset", "Git stash"], answer: 0 },
+    { id: 3, question: "When is React.memo most useful?", options: ["For every component by default", "When a component often receives unchanged props", "Only for server code", "When removing state"], answer: 1 },
+    { id: 4, question: "What does useMemo memoize?", options: ["A computed value", "A network port", "A CSS file", "A route path"], answer: 0 },
+    { id: 5, question: "What does useCallback memoize?", options: ["A component tree snapshot", "A function reference", "A browser tab", "A package lock"], answer: 1 },
+    { id: 6, question: "What can list virtualization improve?", options: ["Rendering very long lists", "Password strength", "DNS lookup", "Image copyright"], answer: 0 },
+    { id: 7, question: "Which key choice is usually safest for dynamic lists?", options: ["Array index always", "A stable unique item id", "Math.random()", "The current timestamp"], answer: 1 },
+    { id: 8, question: "What can code splitting reduce?", options: ["Initial JavaScript loaded by the page", "The number of users", "Database backups", "Keyboard shortcuts"], answer: 0 },
+    { id: 9, question: "What should you do before optimizing a React app?", options: ["Measure the bottleneck", "Delete all hooks", "Rewrite in another language", "Disable errors"], answer: 0 },
+    { id: 10, question: "Which pattern helps avoid passing props through many layers?", options: ["Prop drilling only", "Context or composition", "Duplicating state everywhere", "Hard-coding data"], answer: 1 },
+  ],
+  "prep-3": [
+    { id: 1, question: "Which AWS model describes paying only for what you use?", options: ["Capital expense only", "Pay-as-you-go pricing", "Manual billing", "Fixed hardware leasing"], answer: 1 },
+    { id: 2, question: "Which service provides scalable object storage?", options: ["Amazon S3", "Amazon EC2", "AWS IAM", "Amazon Route 53"], answer: 0 },
+    { id: 3, question: "Which service manages users, groups, roles, and permissions?", options: ["Amazon VPC", "AWS IAM", "Amazon CloudFront", "AWS Lambda"], answer: 1 },
+    { id: 4, question: "What is an Availability Zone?", options: ["A billing dashboard", "One or more isolated data centers in a Region", "A user permission", "A storage class only"], answer: 1 },
+    { id: 5, question: "Which service runs virtual servers in AWS?", options: ["Amazon EC2", "Amazon S3 Glacier", "AWS Budgets", "Amazon SNS"], answer: 0 },
+    { id: 6, question: "Which AWS pillar focuses on protecting data and systems?", options: ["Cost Optimization", "Security", "Performance Efficiency", "Operational Excellence"], answer: 1 },
+    { id: 7, question: "Which tool can alert when spending crosses a threshold?", options: ["AWS Budgets", "Amazon Rekognition", "AWS Cloud9", "Amazon Polly"], answer: 0 },
+    { id: 8, question: "What is AWS Lambda commonly used for?", options: ["Serverless code execution", "Manual cable management", "Static IP registration only", "Creating spreadsheets"], answer: 0 },
+    { id: 9, question: "Which service is used for content delivery through edge locations?", options: ["Amazon CloudFront", "AWS IAM", "Amazon RDS", "AWS Organizations"], answer: 0 },
+    { id: 10, question: "In the shared responsibility model, what does AWS generally manage?", options: ["Customer application code", "Physical infrastructure of the cloud", "Customer data classification", "User password choices"], answer: 1 },
+  ],
+  "prep-4": [
+    { id: 1, question: "Which SQL clause filters rows before grouping?", options: ["ORDER BY", "WHERE", "HAVING", "LIMIT"], answer: 1 },
+    { id: 2, question: "Which SQL clause filters grouped results?", options: ["HAVING", "SELECT", "FROM", "JOIN"], answer: 0 },
+    { id: 3, question: "What does an INNER JOIN return?", options: ["Only unmatched left rows", "Rows with matching keys in both tables", "Every possible row combination", "Only duplicate columns"], answer: 1 },
+    { id: 4, question: "Which aggregate returns the number of rows?", options: ["SUM", "AVG", "COUNT", "MIN"], answer: 2 },
+    { id: 5, question: "What does GROUP BY usually do?", options: ["Combines rows into summary groups", "Deletes duplicate tables", "Encrypts values", "Sorts by default only"], answer: 0 },
+    { id: 6, question: "Which function ranks rows within a partition?", options: ["RANK()", "COUNT()", "LOWER()", "ROUND()"], answer: 0 },
+    { id: 7, question: "What is a common use of a CTE?", options: ["Make complex queries easier to read", "Replace every index", "Change database passwords", "Disable joins"], answer: 0 },
+    { id: 8, question: "Which clause controls result order?", options: ["ORDER BY", "WHERE", "GROUP BY", "SELECT"], answer: 0 },
+    { id: 9, question: "What does AVG(revenue) calculate?", options: ["Total revenue", "Largest revenue", "Average revenue", "Number of revenue rows only"], answer: 2 },
+    { id: 10, question: "Which practice helps dashboard queries stay trustworthy?", options: ["Clear filters, tested joins, and documented metrics", "Random aliases", "Ignoring nulls always", "Removing all WHERE clauses"], answer: 0 },
+  ],
+};
+
+const defaultPracticeTestQuestions = practiceTestQuestionsByCourse["courses-1"];
+
 const mentorshipCourses = [
   {
     id: 1,
@@ -1617,6 +1670,8 @@ function App() {
   const [authForm, setAuthForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "Applicant" });
   const [authFeedback, setAuthFeedback] = useState("");
   const [roadmapGenerationRequestId, setRoadmapGenerationRequestId] = useState(0);
+  const [practiceAnswers, setPracticeAnswers] = useState({});
+  const [activePracticeTest, setActivePracticeTest] = useState(null);
   const latestRoadmapRequestKeyRef = useRef("");
   const [announcementForm, setAnnouncementForm] = useState({
     tag: "Update",
@@ -4772,7 +4827,7 @@ function App() {
 
             {authFeedback ? <p className="auth-feedback">{authFeedback}</p> : null}
 
-            <div key={state.trainingTab} className="progress-card-list content-appear">
+            <div className="progress-card-list">
               {filteredAdminUsers.map((item) => (
                 <article key={item.id} className="progress-card interactive-card" onClick={() => openAdminUserDetails(item.id)}>
                   <div className="application-top">
@@ -5563,7 +5618,7 @@ function App() {
         )}
 
         {!isAdmin && state.activeSidebar === "training" && !hasActiveSubscription && (
-          <PremiumLockScreen pageName="Training" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
+          <PremiumLockScreen pageName="Development" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
         )}
 
         {!isAdmin && state.activeSidebar === "training" && hasActiveSubscription && (
@@ -5588,7 +5643,7 @@ function App() {
           <section className="progress-section">
             <div className="applications-head">
               <div>
-                <h1>Progress & Assessment</h1>
+                <h1>Training</h1>
                 <p>Track your mentorship courses and certification exam readiness.</p>
               </div>
             </div>
@@ -5629,7 +5684,14 @@ function App() {
             </div>
 
             <div key={state.progressTab} className="progress-card-list content-appear">
-              {visibleProgressCards.map((card) => (
+              {visibleProgressCards.map((card) => {
+                const practiceKey = `${card.type}-${card.id}`;
+                const cardQuestions = practiceTestQuestionsByCourse[practiceKey] ?? defaultPracticeTestQuestions;
+                const cardAnswers = practiceAnswers[practiceKey] ?? {};
+                const answeredCount = cardQuestions.filter((item) => cardAnswers[item.id] !== undefined).length;
+                const correctCount = cardQuestions.filter((item) => cardAnswers[item.id] === item.answer).length;
+
+                return (
                 <article key={card.id} className={`progress-card ${card.statusClass}`}>
                   <div className="progress-card-head">
                     <div className={`listing-avatar ${card.accent}`}>{card.initial}</div>
@@ -5673,6 +5735,37 @@ function App() {
                       </div>
                     </div>
 
+                    <div className="learning-module">
+                      <div className="learning-module-head">
+                        <div>
+                          <span className="section-kicker">Module 1</span>
+                          <h4>Practice 10-item Multiple Choice Test</h4>
+                          <p>Check your understanding with a short module quiz for this course.</p>
+                        </div>
+                        <div className="module-score">
+                          <strong>{correctCount}/{cardQuestions.length}</strong>
+                          <span>{answeredCount} answered</span>
+                        </div>
+                      </div>
+
+                      <div className="module-lesson-row">
+                        <span>Lesson review</span>
+                        <span>Practice test</span>
+                        <span>Instant feedback</span>
+                      </div>
+
+                      <div className="module-action-row">
+                        <span>{answeredCount === cardQuestions.length ? "Practice test completed" : "Practice test available"}</span>
+                        <button
+                          className="roadmap-cta module-test-button"
+                          type="button"
+                          onClick={() => setActivePracticeTest({ key: practiceKey, title: card.title, questions: cardQuestions })}
+                        >
+                          {answeredCount > 0 ? "Continue Practice Test" : "Start Practice Test"}
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="progress-footer">
                       <div className="progress-tags">
                         {card.tags.map((tag) => (
@@ -5683,7 +5776,8 @@ function App() {
                     </div>
                   </div>
                 </article>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}
@@ -5938,7 +6032,7 @@ function App() {
               <span>{mentorshipCourses.length} courses available</span>
             </div>
 
-            <div className="progress-card-list">
+            <div key={state.trainingTab} className="progress-card-list content-appear">
               {mentorshipCourses.map((course) => {
                 const applied = state.mentorshipApplied.includes(course.id);
 
@@ -6090,6 +6184,87 @@ function App() {
           </section>
         )}
       </main>
+
+      {activePracticeTest && (
+        <div className="profile-overlay job-modal-overlay" onClick={() => setActivePracticeTest(null)}>
+          <aside className="profile-panel job-modal practice-test-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="profile-panel-header">
+              <div>
+                <span className="section-kicker">Practice Test</span>
+                <h2>{activePracticeTest.title}</h2>
+              </div>
+              <button className="profile-close" type="button" onClick={() => setActivePracticeTest(null)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {(() => {
+              const activeQuestions = activePracticeTest.questions ?? defaultPracticeTestQuestions;
+              const activeAnswers = practiceAnswers[activePracticeTest.key] ?? {};
+              const answeredCount = activeQuestions.filter((item) => activeAnswers[item.id] !== undefined).length;
+              const correctCount = activeQuestions.filter((item) => activeAnswers[item.id] === item.answer).length;
+
+              return (
+                <div className="profile-panel-body practice-test-body">
+                  <div className="practice-test-summary">
+                    <div className="module-score">
+                      <strong>{correctCount}/{activeQuestions.length}</strong>
+                      <span>score</span>
+                    </div>
+                    <div>
+                      <h3>10-item Multiple Choice Test</h3>
+                      <p>{answeredCount} of {activeQuestions.length} questions answered. Select an option to get instant feedback.</p>
+                    </div>
+                  </div>
+
+                  <div className="practice-question-list">
+                    {activeQuestions.map((item, questionIndex) => {
+                      const selectedAnswer = activeAnswers[item.id];
+
+                      return (
+                        <div key={item.id} className="practice-question">
+                          <div className="practice-question-head">
+                            <span>Question {questionIndex + 1}</span>
+                            {selectedAnswer !== undefined ? (
+                              <strong className={selectedAnswer === item.answer ? "mint-text" : "gold-text"}>
+                                {selectedAnswer === item.answer ? "Correct" : "Review"}
+                              </strong>
+                            ) : null}
+                          </div>
+                          <p>{item.question}</p>
+                          <div className="practice-options">
+                            {item.options.map((option, optionIndex) => (
+                              <button
+                                key={option}
+                                className={`practice-option${selectedAnswer === optionIndex ? " selected" : ""}${
+                                  selectedAnswer !== undefined && item.answer === optionIndex ? " correct" : ""
+                                }`}
+                                type="button"
+                                onClick={() =>
+                                  setPracticeAnswers((current) => ({
+                                    ...current,
+                                    [activePracticeTest.key]: {
+                                      ...(current[activePracticeTest.key] ?? {}),
+                                      [item.id]: optionIndex,
+                                    },
+                                  }))
+                                }
+                              >
+                                <span>{String.fromCharCode(65 + optionIndex)}</span>
+                                {option}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+          </aside>
+        </div>
+      )}
 
       {state.profilePanelOpen && (
         <div className="profile-overlay" onClick={() => patchState({ profilePanelOpen: false })}>
