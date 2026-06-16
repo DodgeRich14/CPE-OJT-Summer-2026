@@ -36,6 +36,7 @@ import { hasSupabaseConfig, supabase } from "./lib/supabase";
 const STORAGE_KEY = "skillbridge-career-studio";
 const DEMO_ACCOUNT_EMAIL = "justine.alonzo@student.skillbridge.ph";
 const applicationStages = ["Applied", "Reviewed", "Shortlisted", "Interview", "Offer"];
+const ROADMAP_ENHANCEMENT_TIMEOUT_MS = 30000;
 
 const sidebarItems = [
   { id: "discover", label: "Discover", icon: Compass },
@@ -2374,6 +2375,10 @@ function App() {
       }),
     [roadmapCandidateJobIds, roadmapProfileSignature],
   );
+  const roadmapRequestKey = useMemo(
+    () => `${roadmapGenerationKey}:${roadmapGenerationRequestId}`,
+    [roadmapGenerationKey, roadmapGenerationRequestId],
+  );
   const inProgressCount = appliedCards.filter((card) => ["Reviewed", "Shortlisted"].includes(card.status)).length;
   const interviewCount = appliedCards.filter((card) => card.status === "Interview").length;
   const visibleProgressCards = progressCards.filter((card) => card.type === state.progressTab);
@@ -2392,6 +2397,7 @@ function App() {
     })),
   }));
   const activeRoadmap = roadmapItems[activeRoadmapIndex] ?? roadmapItems[0] ?? null;
+  const activeRoadmapJobId = activeRoadmap?.job_id ? String(activeRoadmap.job_id) : (roadmapCandidateJobs[0]?.id ? String(roadmapCandidateJobs[0].id) : "");
   useEffect(() => {
     if (roadmapItems.length === 0) {
       setActiveRoadmapIndex(0);
@@ -2441,12 +2447,12 @@ function App() {
       return;
     }
 
-    if (state.roadmapStatus.lastGeneratedKey === roadmapGenerationKey && state.roadmapStatus.loading) {
+    if (state.roadmapStatus.lastGeneratedKey === roadmapRequestKey && state.roadmapStatus.loading) {
       return;
     }
 
     if (
-      state.roadmapStatus.lastGeneratedKey === roadmapGenerationKey &&
+      state.roadmapStatus.lastGeneratedKey === roadmapRequestKey &&
       state.careerRoadmaps.length > 0 &&
       state.careerRoadmaps.every((item) => activeRoadmapIds.has(String(item.job_id)))
     ) {
@@ -2454,6 +2460,7 @@ function App() {
     }
 
     let cancelled = false;
+    let enhancementTimeoutId = null;
 
     const roadmapPayload = {
       profile: {
@@ -2505,7 +2512,8 @@ function App() {
           })
           .filter(Boolean),
       );
-      const missingJobs = roadmapPayload.jobs.filter((job) => !cachedMap.has(String(job.id)));
+      const activeJob = roadmapPayload.jobs.find((job) => String(job.id) === activeRoadmapJobId) ?? roadmapPayload.jobs[0] ?? null;
+      const missingJobs = activeJob && !cachedMap.has(String(activeJob.id)) ? [activeJob] : [];
       const shouldGenerateMissingJobs = roadmapGenerationRequestId > 0;
       const fallbackByJobId = new Map(immediateRoadmaps.map((roadmap) => [String(roadmap.job_id), roadmap]));
       const immediateMergedRoadmaps = roadmapCandidateJobIds
@@ -2517,8 +2525,9 @@ function App() {
         .sort()
         .at(-1);
       const hasCachedAiRoadmap = cachedRows.some((row) => row.status && row.status !== "Planned");
-      const cachedCount = roadmapCandidateJobIds.length - missingJobs.length;
-      const initialProgress = buildRoadmapProgress(cachedCount, roadmapCandidateJobIds.length);
+      const generationTotal = missingJobs.length > 0 ? 1 : activeJob ? 1 : 0;
+      const cachedCount = activeJob && cachedMap.has(String(activeJob.id)) ? 1 : 0;
+      const initialProgress = buildRoadmapProgress(cachedCount, generationTotal);
 
       setState((current) => ({
         ...current,
@@ -2529,7 +2538,7 @@ function App() {
             error: "",
             updatedAt: latestCachedAt || new Date().toISOString(),
             roadmapEngine: hasCachedAiRoadmap ? "ai-structured-output" : "local-fallback",
-            lastGeneratedKey: roadmapGenerationKey,
+            lastGeneratedKey: roadmapRequestKey,
             progressPercent:
               !shouldGenerateMissingJobs && cachedRows.length === 0
                 ? 0
@@ -2541,13 +2550,32 @@ function App() {
                 ? ""
                 : missingJobs.length > 0
                   ? initialProgress.progressLabel
-                  : `${roadmapCandidateJobIds.length}/${roadmapCandidateJobIds.length} roadmaps enhanced`,
+                  : generationTotal > 0
+                    ? `${generationTotal}/${generationTotal} roadmap enhanced`
+                    : "",
           },
         }));
 
       if (missingJobs.length === 0 || !shouldGenerateMissingJobs) {
         return;
       }
+
+      enhancementTimeoutId = window.setTimeout(() => {
+        if (cancelled) return;
+
+        setState((current) => {
+          if (current.roadmapStatus.lastGeneratedKey !== roadmapRequestKey) return current;
+
+          return {
+            ...current,
+            roadmapStatus: {
+              ...current.roadmapStatus,
+              loading: false,
+              error: "AI roadmap enhancement took too long. The local roadmap is still available below. Try again in a moment.",
+            },
+          };
+        });
+      }, ROADMAP_ENHANCEMENT_TIMEOUT_MS);
 
       const results = [];
 
@@ -2565,6 +2593,10 @@ function App() {
 
           const generatedRoadmap = result.roadmaps?.[0];
           if (generatedRoadmap) {
+            const taggedRoadmap = {
+              ...generatedRoadmap,
+              _source: result.usedFallback ? "local-fallback" : "ai-enhanced",
+            };
             if (hasSupabaseConfig && supabase && state.auth.accountId && !result.usedFallback) {
               const cacheTitle = buildRoadmapCacheTitle(job.id, roadmapProfileSignature);
               const existingCacheRow = cachedRows.find((row) => row.title === cacheTitle);
@@ -2572,7 +2604,10 @@ function App() {
                 applicant_id: state.auth.accountId,
                 phase_label: "CACHE",
                 title: cacheTitle,
-                summary: JSON.stringify(generatedRoadmap),
+                summary: JSON.stringify({
+                  ...taggedRoadmap,
+                  _source: "ai-enhanced",
+                }),
                 skills: [],
                 actions: [],
                 sort_order: 0,
@@ -2596,12 +2631,12 @@ function App() {
             }
 
             setState((current) => {
-              if (current.roadmapStatus.lastGeneratedKey !== roadmapGenerationKey) return current;
+              if (current.roadmapStatus.lastGeneratedKey !== roadmapRequestKey) return current;
 
               const nextRoadmaps = current.careerRoadmaps
-                .map((roadmap) => (String(roadmap.job_id) === String(generatedRoadmap.job_id) ? generatedRoadmap : roadmap))
+                .map((roadmap) => (String(roadmap.job_id) === String(taggedRoadmap.job_id) ? taggedRoadmap : roadmap))
                 .filter(Boolean);
-              const completedProgress = buildRoadmapProgress(cachedCount + results.length, roadmapCandidateJobIds.length);
+              const completedProgress = buildRoadmapProgress(cachedCount + results.length, generationTotal);
 
               return {
                 ...current,
@@ -2619,9 +2654,9 @@ function App() {
         } catch (error) {
           results.push({ status: "rejected", reason: error, jobId: job.id });
           setState((current) => {
-            if (current.roadmapStatus.lastGeneratedKey !== roadmapGenerationKey) return current;
+            if (current.roadmapStatus.lastGeneratedKey !== roadmapRequestKey) return current;
 
-            const completedProgress = buildRoadmapProgress(cachedCount + results.length, roadmapCandidateJobIds.length);
+            const completedProgress = buildRoadmapProgress(cachedCount + results.length, generationTotal);
             return {
               ...current,
               roadmapStatus: {
@@ -2635,6 +2670,10 @@ function App() {
       }
 
       if (cancelled) return;
+      if (enhancementTimeoutId) {
+        window.clearTimeout(enhancementTimeoutId);
+        enhancementTimeoutId = null;
+      }
 
       const failures = results
         .filter((result) => result.status === "rejected" || result.value?.fallbackError)
@@ -2645,7 +2684,7 @@ function App() {
       );
 
       setState((current) => {
-        if (current.roadmapStatus.lastGeneratedKey !== roadmapGenerationKey) return current;
+        if (current.roadmapStatus.lastGeneratedKey !== roadmapRequestKey) return current;
 
         return {
           ...current,
@@ -2656,13 +2695,17 @@ function App() {
             updatedAt: new Date().toISOString(),
             roadmapEngine: hasAiRoadmap ? "ai-structured-output" : "local-fallback",
             progressPercent: 100,
-            progressLabel: `${roadmapCandidateJobIds.length}/${roadmapCandidateJobIds.length} roadmaps enhanced`,
+            progressLabel: generationTotal > 0 ? `${generationTotal}/${generationTotal} roadmap enhanced` : "",
           },
         };
       });
     }
     loadRoadmapsWithCache().catch((error) => {
       if (cancelled) return;
+      if (enhancementTimeoutId) {
+        window.clearTimeout(enhancementTimeoutId);
+        enhancementTimeoutId = null;
+      }
 
       setState((current) => ({
         ...current,
@@ -2673,7 +2716,7 @@ function App() {
           error: error.message || "Failed to load cached roadmaps.",
           updatedAt: new Date().toISOString(),
           roadmapEngine: "local-fallback",
-          lastGeneratedKey: roadmapGenerationKey,
+          lastGeneratedKey: roadmapRequestKey,
           progressPercent: 0,
           progressLabel: "",
         },
@@ -2682,6 +2725,9 @@ function App() {
 
     return () => {
       cancelled = true;
+      if (enhancementTimeoutId) {
+        window.clearTimeout(enhancementTimeoutId);
+      }
     };
   }, [
     hasActiveSubscription,
@@ -2691,11 +2737,10 @@ function App() {
     roadmapCandidateJobs,
     roadmapGenerationKey,
     roadmapGenerationRequestId,
+    roadmapRequestKey,
     roadmapProfileSignature,
     state.auth.accountId,
     state.auth.isAuthenticated,
-    state.roadmapStatus.lastGeneratedKey,
-    state.roadmapStatus.loading,
   ]);
   const filteredCertifications = certifications.filter(
     (item) => state.certificationFilter === "All" || item.track === state.certificationFilter,
@@ -5722,6 +5767,9 @@ function App() {
                   <div className="roadmap-job-meta">
                     <span>{activeRoadmap.estimated_timeline || "6-10 weeks"}</span>
                     <span>{activeRoadmap.target_role || state.profile.jobTitle || state.profile.aiProfile?.suggested_roles?.[0] || "Target role"}</span>
+                    <span className={`status-badge ${activeRoadmap._source === "ai-enhanced" ? "ready" : "saved"}`}>
+                      {activeRoadmap._source === "ai-enhanced" ? "AI Enhanced" : "Local Fallback"}
+                    </span>
                   </div>
                 </div>
 
@@ -5770,23 +5818,31 @@ function App() {
                           <div className="roadmap-body roadmap-phase-appear">
                             <div className="roadmap-section-block">
                               <p>Skills</p>
-                              <div className="progress-tags">
-                                {item.skills.map((skill) => (
-                                  <span key={skill}>{skill}</span>
-                                ))}
-                              </div>
+                              {item.skills.length > 0 ? (
+                                <div className="progress-tags">
+                                  {item.skills.map((skill) => (
+                                    <span key={skill}>{skill}</span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="roadmap-empty-copy">No specific skills were returned for this phase yet.</p>
+                              )}
                             </div>
 
                             <div className="roadmap-section-block">
                               <p>Actions</p>
-                              <div className="roadmap-actions">
-                                {item.actions.map((action) => (
-                                  <div key={action} className="roadmap-action">
-                                    <ArrowRight size={12} />
-                                    <span>{action}</span>
-                                  </div>
-                                ))}
-                              </div>
+                              {item.actions.length > 0 ? (
+                                <div className="roadmap-actions">
+                                  {item.actions.map((action) => (
+                                    <div key={action} className="roadmap-action">
+                                      <ArrowRight size={12} />
+                                      <span>{action}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="roadmap-empty-copy">No action steps were returned for this phase yet.</p>
+                              )}
                             </div>
 
                             <button
@@ -7180,6 +7236,7 @@ function normalizeCachedRoadmapRecord(record) {
     return {
       ...parsed,
       job_id: String(parsed.job_id || record.cacheJobId || ""),
+      _source: parsed._source || "ai-enhanced",
     };
   } catch {
     return null;

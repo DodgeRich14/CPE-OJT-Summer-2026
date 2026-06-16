@@ -150,12 +150,18 @@ function buildFallbackRoadmaps(profile: Record<string, unknown>, resumeProfile: 
   });
 }
 
+function logDebug(stage: string, details: Record<string, unknown> = {}) {
+  console.log(`[generate-career-roadmaps] ${stage}`, JSON.stringify(details));
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
+    logDebug("cors_preflight");
     return new Response("ok", { headers: corsHeaders });
   }
 
   if (request.method !== "POST") {
+    logDebug("method_not_allowed", { method: request.method });
     return jsonResponse({ error: "Method not allowed." }, 405);
   }
 
@@ -168,8 +174,15 @@ Deno.serve(async (request) => {
     profile = payload?.profile && typeof payload.profile === "object" ? payload.profile : {};
     resumeProfile = payload?.resumeProfile && typeof payload.resumeProfile === "object" ? payload.resumeProfile : {};
     jobs = Array.isArray(payload?.jobs) ? payload.jobs.filter(Boolean).slice(0, 3) : [];
+    logDebug("request_received", {
+      jobCount: jobs.length,
+      role: profile.role || "",
+      jobTitle: profile.jobTitle || "",
+      hasResumeProfile: Boolean(Object.keys(resumeProfile).length),
+    });
 
     if (jobs.length === 0) {
+      logDebug("empty_jobs");
       return jsonResponse({
         success: true,
         roadmaps: [],
@@ -180,6 +193,7 @@ Deno.serve(async (request) => {
 
     const apiKey = Deno.env.get("ROADMAP_GEMINI_API_KEY");
     if (!apiKey) {
+      logDebug("missing_api_key");
       return jsonResponse({
         success: true,
         roadmaps: buildFallbackRoadmaps(profile, resumeProfile, jobs).map((roadmap) => ({
@@ -201,8 +215,14 @@ Deno.serve(async (request) => {
       skills: Array.isArray(profile.skills) ? profile.skills : [],
       suggested_roles: Array.isArray(resumeProfile.suggested_roles) ? resumeProfile.suggested_roles : [],
       summary: resumeProfile.summary || "",
+      resume_skills: Array.isArray(resumeProfile.skills) ? resumeProfile.skills : [],
       strengths: Array.isArray(resumeProfile.strengths) ? resumeProfile.strengths : [],
       improvement_skills: Array.isArray(resumeProfile.improvement_skills) ? resumeProfile.improvement_skills : [],
+      keywords: Array.isArray(resumeProfile.keywords) ? resumeProfile.keywords : [],
+      projects: Array.isArray(resumeProfile.projects) ? resumeProfile.projects : [],
+      certifications: Array.isArray(resumeProfile.certifications) ? resumeProfile.certifications : [],
+      education: Array.isArray(resumeProfile.education) ? resumeProfile.education : [],
+      experience_years: Number(resumeProfile.experience_years || 0),
     };
 
     const compactJobs = jobs.map((job) => ({
@@ -220,11 +240,17 @@ Deno.serve(async (request) => {
 
     const prompt = [
       "You are generating highly practical career roadmaps for a student or early-career applicant.",
-      "Use the user context and each applied job carefully. Do not invent experience or certifications the user does not have.",
+      "Use the user context and each applied job carefully. Do not invent experience, projects, certifications, or skills the user does not have.",
       "Return exactly one roadmap per job, in the same job order provided.",
       "Each roadmap must stay consistent in structure: phases now, phase-1, phase-2, target.",
-      "Make the content specific to the job title, required skills, and the user's current strengths and gaps.",
-      "Keep fit_summary concise, realistic, and grounded in the user's actual profile.",
+      "Base every roadmap on the user's actual profile skills, resume skills, strengths, projects, certifications, summary, and matched job overlap first.",
+      "Use the job's matchedSkills and gaps as the main evidence for what the user already has and what the user still needs.",
+      "Make the content specific to the job title, required skills, matched skills, gaps, and the user's actual resume evidence.",
+      "Keep fit_summary concise, realistic, and explicitly grounded in the user's actual profile and resume.",
+      "If the user already has matching skills, use them in the Now phase instead of generic advice.",
+      "If the user has projects or certifications relevant to the role, mention the kind of proof they should refine, but do not invent project names or credentials.",
+      "Never leave a phase effectively empty. If the model is unsure, infer the best next actions from the user's listed skills, strengths, matchedSkills, gaps, and requiredSkills.",
+      "Do not suggest irrelevant advanced skills that do not fit the user's current level unless they are clearly requested by the job.",
       "Each phase title must be distinct and useful, not generic filler.",
       "Each skills list should contain 2 to 6 concrete skills.",
       "Each actions list should contain 2 to 4 concrete, realistic next steps.",
@@ -233,6 +259,11 @@ Deno.serve(async (request) => {
       `Applied jobs: ${JSON.stringify(compactJobs)}`,
     ].join("\n");
 
+    logDebug("calling_gemini", {
+      model: GEMINI_MODEL,
+      jobIds: compactJobs.map((job) => job.id),
+      promptLength: prompt.length,
+    });
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
       {
@@ -258,13 +289,28 @@ Deno.serve(async (request) => {
 
     if (!response.ok) {
       const text = await response.text();
+      logDebug("gemini_http_error", {
+        status: response.status,
+        bodyPreview: text.slice(0, 500),
+      });
       throw new Error(text || `Gemini roadmap request failed with status ${response.status}.`);
     }
 
     const result = await response.json();
+    logDebug("gemini_response_received", {
+      hasCandidates: Boolean(result?.candidates?.length),
+      candidateCount: result?.candidates?.length || 0,
+    });
     const rawText = result?.candidates?.[0]?.content?.parts?.map((part: { text?: string }) => part?.text || "").join("") || "";
+    logDebug("gemini_text_extracted", {
+      textLength: rawText.length,
+      preview: rawText.slice(0, 180),
+    });
     const parsed = JSON.parse(normalizeJsonBlock(rawText));
     const generatedRoadmaps = Array.isArray(parsed?.roadmaps) ? parsed.roadmaps : [];
+    logDebug("roadmaps_parsed", {
+      generatedCount: generatedRoadmaps.length,
+    });
 
     const normalizedRoadmaps = compactJobs.map((job, jobIndex) => {
       const generated = generatedRoadmaps[jobIndex] ?? generatedRoadmaps.find((item: Record<string, unknown>) => String(item?.job_id || "") === String(job.id));
@@ -290,6 +336,10 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown roadmap generation error.";
+    logDebug("fallback_returned", {
+      message,
+      fallbackCount: jobs.length,
+    });
     return jsonResponse({
       success: true,
       roadmaps: buildFallbackRoadmaps(profile, resumeProfile, jobs).map((roadmap) => ({

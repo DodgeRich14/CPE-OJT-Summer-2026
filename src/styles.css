@@ -1035,6 +1035,15 @@ select:focus-visible {
   text-align: left;
 }
 
+.roadmap-empty-copy {
+  margin: 0;
+  color: var(--muted-soft);
+  font-family: "Inter", sans-serif;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  text-align: left;
+}
+
 .roadmap-focus-tags {
   margin-top: -2px;
 }

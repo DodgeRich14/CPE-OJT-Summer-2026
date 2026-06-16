@@ -781,6 +781,7 @@ export function buildCareerRoadmapFallback(payload) {
       title: jobTitle,
       company_name: companyName,
       target_role: roleFocus,
+      _source: "local-fallback",
       fit_summary: fitSummary,
       estimated_timeline: skillGaps.length > 3 ? "10-14 weeks" : "6-10 weeks",
       focus_skills: focusSkills,
