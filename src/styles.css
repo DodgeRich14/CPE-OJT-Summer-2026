@@ -564,7 +564,7 @@ select:focus-visible {
 
 .applications-tabs {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(var(--tab-count, 2), 1fr);
   gap: 6px;
   position: relative;
   padding: 4px;
@@ -580,7 +580,7 @@ select:focus-visible {
   top: 4px;
   bottom: 4px;
   left: 4px;
-  width: calc((100% - 14px) / 2);
+  width: calc((100% - 8px - ((var(--tab-count, 2) - 1) * var(--tab-gap))) / var(--tab-count, 2));
   border-radius: 12px;
   background: var(--panel);
   transform: translateX(calc(var(--tab-active-index, 0) * (100% + var(--tab-gap))));
@@ -684,6 +684,10 @@ select:focus-visible {
 
 .progress-tabs {
   margin-bottom: 24px;
+}
+
+.training-tabs {
+  margin-bottom: 18px;
 }
 
 .progress-card-list {

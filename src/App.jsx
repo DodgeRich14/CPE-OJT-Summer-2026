@@ -41,14 +41,18 @@ const ROADMAP_ENHANCEMENT_TIMEOUT_MS = 30000;
 const sidebarItems = [
   { id: "discover", label: "Discover", icon: Compass },
   { id: "applications", label: "Applications", icon: FileText },
-  { id: "subscription", label: "Subscription", icon: CreditCard },
-  { id: "progress", label: "Progress", icon: LineChart },
   { id: "roadmap", label: "Roadmap", icon: MapIcon },
-  { id: "mentorship", label: "Mentorship", icon: Users },
-  { id: "certifications", label: "Certifications", icon: ShieldCheck },
+  { id: "training", label: "Training", icon: BookOpen },
+  { id: "subscription", label: "Subscription", icon: CreditCard },
 ];
 
-const premiumApplicantPages = ["progress", "roadmap", "mentorship", "certifications"];
+const premiumApplicantPages = ["training", "roadmap"];
+const legacyTrainingPages = ["progress", "mentorship", "certifications"];
+const trainingTabs = [
+  { id: "progress", label: "Progress" },
+  { id: "mentorship", label: "Mentorship" },
+  { id: "certifications", label: "Certifications" },
+];
 
 const adminSidebarItems = [
   { id: "users", label: "User Management", icon: Users },
@@ -1311,6 +1315,7 @@ const defaultState = {
   },
   applicationsTab: "applied",
   expandedApplicationId: 1,
+  trainingTab: "progress",
   progressTab: "courses",
   expandedRoadmapId: "",
   profilePanelOpen: false,
@@ -1412,6 +1417,7 @@ function buildPersistedState(state) {
     subscription: state.subscription,
     applicationsTab: state.applicationsTab,
     expandedApplicationId: state.expandedApplicationId,
+    trainingTab: state.trainingTab,
     progressTab: state.progressTab,
     expandedRoadmapId: state.expandedRoadmapId,
     profilePanelOpen: state.profilePanelOpen,
@@ -1459,7 +1465,12 @@ function loadSavedState() {
       return defaultState;
     }
 
-    return { ...defaultState, ...parsed };
+    return {
+      ...defaultState,
+      ...parsed,
+      activeSidebar: legacyTrainingPages.includes(parsed.activeSidebar) ? "training" : parsed.activeSidebar,
+      trainingTab: legacyTrainingPages.includes(parsed.activeSidebar) ? parsed.activeSidebar : parsed.trainingTab || defaultState.trainingTab,
+    };
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
     return defaultState;
@@ -2280,6 +2291,10 @@ function App() {
     0,
   );
   const applicationsTabIndex = state.applicationsTab === "saved" ? 1 : 0;
+  const trainingTabIndex = Math.max(
+    trainingTabs.findIndex((tab) => tab.id === state.trainingTab),
+    0,
+  );
   const progressTabIndex = Math.max(
     progressTabs.findIndex((tab) => tab.id === state.progressTab),
     0,
@@ -2816,6 +2831,25 @@ function App() {
       state.adminEmployers.filter((item) => item.status === "Pending").length,
     liveContent: state.adminAnnouncements.filter((item) => item.isActive).length,
   };
+
+  useEffect(() => {
+    if (!legacyTrainingPages.includes(state.activeSidebar)) return;
+
+    setState((current) => ({
+      ...current,
+      activeSidebar: "training",
+      trainingTab: current.activeSidebar,
+    }));
+  }, [state.activeSidebar]);
+
+  useEffect(() => {
+    if (trainingTabs.some((tab) => tab.id === state.trainingTab)) return;
+
+    setState((current) => ({
+      ...current,
+      trainingTab: "progress",
+    }));
+  }, [state.trainingTab]);
 
   useEffect(() => {
     if (currentSidebarItems.some((item) => item.id === state.activeSidebar)) return;
@@ -4738,7 +4772,7 @@ function App() {
 
             {authFeedback ? <p className="auth-feedback">{authFeedback}</p> : null}
 
-            <div className="progress-card-list">
+            <div key={state.trainingTab} className="progress-card-list content-appear">
               {filteredAdminUsers.map((item) => (
                 <article key={item.id} className="progress-card interactive-card" onClick={() => openAdminUserDetails(item.id)}>
                   <div className="application-top">
@@ -5528,11 +5562,29 @@ function App() {
           </section>
         )}
 
-        {!isAdmin && state.activeSidebar === "progress" && !hasActiveSubscription && (
-          <PremiumLockScreen pageName="Progress & Assessment" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
+        {!isAdmin && state.activeSidebar === "training" && !hasActiveSubscription && (
+          <PremiumLockScreen pageName="Training" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
         )}
 
-        {!isAdmin && state.activeSidebar === "progress" && hasActiveSubscription && (
+        {!isAdmin && state.activeSidebar === "training" && hasActiveSubscription && (
+          <div
+            className="applications-tabs progress-tabs training-tabs"
+            style={{ "--tab-active-index": trainingTabIndex, "--tab-count": trainingTabs.length }}
+          >
+            {trainingTabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={`applications-tab${state.trainingTab === tab.id ? " active" : ""}`}
+                type="button"
+                onClick={() => patchState({ trainingTab: tab.id })}
+              >
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {!isAdmin && state.activeSidebar === "training" && state.trainingTab === "progress" && hasActiveSubscription && (
           <section className="progress-section">
             <div className="applications-head">
               <div>
@@ -5855,7 +5907,7 @@ function App() {
                               type="button"
                               onClick={(event) => {
                                 event.stopPropagation();
-                                patchState({ activeSidebar: "mentorship" });
+                                patchState({ activeSidebar: "training", trainingTab: "mentorship" });
                               }}
                             >
                               <BookOpen size={14} />
@@ -5872,11 +5924,7 @@ function App() {
           </section>
         )}
 
-        {!isAdmin && state.activeSidebar === "mentorship" && !hasActiveSubscription && (
-          <PremiumLockScreen pageName="Mentorship" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
-        )}
-
-        {!isAdmin && state.activeSidebar === "mentorship" && hasActiveSubscription && (
+        {!isAdmin && state.activeSidebar === "training" && state.trainingTab === "mentorship" && hasActiveSubscription && (
           <section className="mentorship-section">
             <div className="applications-head">
               <div>
@@ -5962,11 +6010,7 @@ function App() {
           </section>
         )}
 
-        {!isAdmin && state.activeSidebar === "certifications" && !hasActiveSubscription && (
-          <PremiumLockScreen pageName="Certifications" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
-        )}
-
-        {!isAdmin && state.activeSidebar === "certifications" && hasActiveSubscription && (
+        {!isAdmin && state.activeSidebar === "training" && state.trainingTab === "certifications" && hasActiveSubscription && (
           <section className="certifications-section">
             <div className="applications-head">
               <div>
