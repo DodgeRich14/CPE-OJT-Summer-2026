@@ -103,17 +103,29 @@ const helpFaqs = [
   },
 ];
 
-const defaultCommunityChannels = [
+const defaultCommunityServers = [
   {
     id: "frontend-lounge",
-    name: "frontend-lounge",
-    topic: "React, UI reviews, portfolio polish, and interview prep.",
+    name: "Frontend Guild",
+    description: "React, UI reviews, portfolio polish, and interview prep.",
     members: 248,
     joined: true,
-    unread: 3,
-    messages: [
-      { id: 1, author: "Mika Reyes", role: "Frontend Intern", text: "Anyone reviewing React portfolios today? I can trade feedback after class.", time: "9:14 AM" },
-      { id: 2, author: "SkillBridge Coach", role: "Mentor", text: "Drop screenshots or repo links here. Keep feedback specific and kind.", time: "9:21 AM" },
+    channels: [
+      {
+        id: "frontend-lounge-general",
+        name: "frontend-lounge",
+        topic: "General frontend conversations and portfolio review swaps.",
+        messages: [
+          { id: 1, author: "Mika Reyes", role: "Frontend Intern", text: "Anyone reviewing React portfolios today? I can trade feedback after class.", time: "9:14 AM" },
+          { id: 2, author: "SkillBridge Coach", role: "Mentor", text: "Drop screenshots or repo links here. Keep feedback specific and kind.", time: "9:21 AM" },
+        ],
+      },
+      {
+        id: "frontend-lounge-review",
+        name: "code-review",
+        topic: "Share snippets, repos, and UI questions for peer feedback.",
+        messages: [],
+      },
     ],
     posts: [
       {
@@ -122,20 +134,29 @@ const defaultCommunityChannels = [
         role: "Mentor",
         text: "Portfolio tip: lead each project with the problem you solved before listing the tech stack.",
         likes: 42,
-        comments: 8,
+        likedByMe: false,
+        comments: [
+          { id: 1, author: "Mika Reyes", role: "Frontend Intern", text: "This helped me rewrite my capstone card. Thank you!", time: "Today" },
+        ],
         time: "Today",
       },
     ],
   },
   {
     id: "ojt-openings",
-    name: "ojt-openings",
-    topic: "Shared internships, OJT leads, referral notes, and application reminders.",
+    name: "OJT Opportunities",
+    description: "Shared internships, OJT leads, referral notes, and application reminders.",
     members: 413,
     joined: false,
-    unread: 0,
-    messages: [
-      { id: 1, author: "Andrea Lim", role: "Applicant", text: "Northstar has a QA internship closing Friday. Check the Discover tab too.", time: "Yesterday" },
+    channels: [
+      {
+        id: "ojt-openings-main",
+        name: "openings",
+        topic: "Post active internships, OJT listings, and referral leads.",
+        messages: [
+          { id: 1, author: "Andrea Lim", role: "Applicant", text: "Northstar has a QA internship closing Friday. Check the Discover tab too.", time: "Yesterday" },
+        ],
+      },
     ],
     posts: [
       {
@@ -144,20 +165,27 @@ const defaultCommunityChannels = [
         role: "Student",
         text: "I made a tracker template for applications and interview dates. Happy to share the format here.",
         likes: 31,
-        comments: 5,
+        likedByMe: false,
+        comments: [],
         time: "Yesterday",
       },
     ],
   },
   {
     id: "career-wins",
-    name: "career-wins",
-    topic: "Celebrate accepted applications, certifications, callbacks, and shipped projects.",
+    name: "Career Wins",
+    description: "Celebrate accepted applications, certifications, callbacks, and shipped projects.",
     members: 167,
     joined: true,
-    unread: 1,
-    messages: [
-      { id: 1, author: "Nina Cruz", role: "Applicant", text: "Passed my first technical interview. The SQL practice questions helped a lot.", time: "8:03 AM" },
+    channels: [
+      {
+        id: "career-wins-main",
+        name: "wins",
+        topic: "Share progress, callbacks, offers, and course completions.",
+        messages: [
+          { id: 1, author: "Nina Cruz", role: "Applicant", text: "Passed my first technical interview. The SQL practice questions helped a lot.", time: "8:03 AM" },
+        ],
+      },
     ],
     posts: [
       {
@@ -166,7 +194,8 @@ const defaultCommunityChannels = [
         role: "Applicant",
         text: "Small win: got shortlisted after revising my resume summary from the profile feedback.",
         likes: 58,
-        comments: 14,
+        likedByMe: false,
+        comments: [],
         time: "Today",
       },
     ],
@@ -1530,9 +1559,13 @@ const defaultState = {
   adminAnnouncements: [],
   careerRoadmaps: [],
   community: {
-    activeChannelId: "frontend-lounge",
-    joinedChannelIds: ["frontend-lounge", "career-wins"],
-    channels: defaultCommunityChannels,
+    activeServerId: "frontend-lounge",
+    activeChannelId: "frontend-lounge-general",
+    activeChatChannelId: "",
+    joinedServerIds: ["frontend-lounge", "career-wins"],
+    servers: defaultCommunityServers,
+    loading: false,
+    error: "",
   },
   supportMessages: [],
   roadmapStatus: {
@@ -1780,6 +1813,134 @@ function mapCertificateSubmissionRecord(record) {
   };
 }
 
+function formatCommunityTime(value) {
+  if (!value) return "Now";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Now";
+
+  return date.toLocaleString("en-PH", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function normalizeCommunitySlug(value, fallback = "general") {
+  const slug = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .slice(0, 36);
+
+  return slug || fallback;
+}
+
+function getCommunityErrorMessage(error, fallback) {
+  const message = error?.message || "";
+
+  if (message.includes("schema cache") || message.includes("community_")) {
+    return "Community database tables are not available yet. Apply the latest Supabase migration, then reload the app.";
+  }
+
+  return `${fallback}: ${message || "Unknown error"}`;
+}
+
+function buildCommunityFromRecords({
+  servers = [],
+  memberships = [],
+  channels = [],
+  messages = [],
+  posts = [],
+  reactions = [],
+  comments = [],
+  currentUserId = "",
+  previousCommunity = defaultState.community,
+}) {
+  const joinedServerIds = memberships.map((membership) => membership.server_id);
+  const reactionCounts = reactions.reduce((counts, reaction) => {
+    counts[reaction.post_id] = (counts[reaction.post_id] ?? 0) + 1;
+    return counts;
+  }, {});
+  const likedPostIds = new Set(reactions.filter((reaction) => reaction.user_id === currentUserId).map((reaction) => reaction.post_id));
+  const commentsByPostId = comments.reduce((grouped, comment) => {
+    grouped[comment.post_id] = grouped[comment.post_id] ?? [];
+    grouped[comment.post_id].push({
+      id: comment.id,
+      author: comment.author_name || "SkillBridge User",
+      role: comment.author_role || "Applicant",
+      text: comment.body || "",
+      time: formatCommunityTime(comment.created_at),
+    });
+    return grouped;
+  }, {});
+  const messagesByChannelId = messages.reduce((grouped, message) => {
+    grouped[message.channel_id] = grouped[message.channel_id] ?? [];
+    grouped[message.channel_id].push({
+      id: message.id,
+      author: message.author_name || "SkillBridge User",
+      role: message.author_role || "Applicant",
+      text: message.body || "",
+      time: formatCommunityTime(message.created_at),
+    });
+    return grouped;
+  }, {});
+  const postsByServerId = posts.reduce((grouped, post) => {
+    grouped[post.server_id] = grouped[post.server_id] ?? [];
+    grouped[post.server_id].push({
+      id: post.id,
+      author: post.author_name || "SkillBridge User",
+      role: post.author_role || "Applicant",
+      text: post.body || "",
+      likes: reactionCounts[post.id] ?? 0,
+      likedByMe: likedPostIds.has(post.id),
+      comments: commentsByPostId[post.id] ?? [],
+      time: formatCommunityTime(post.created_at),
+    });
+    return grouped;
+  }, {});
+  const channelsByServerId = channels.reduce((grouped, channel) => {
+    grouped[channel.server_id] = grouped[channel.server_id] ?? [];
+    grouped[channel.server_id].push({
+      id: channel.id,
+      name: channel.name || "general",
+      topic: channel.topic || "",
+      messages: messagesByChannelId[channel.id] ?? [],
+    });
+    return grouped;
+  }, {});
+  const mappedServers = servers.map((server) => ({
+    id: server.id,
+    name: server.name || "Community Server",
+    description: server.description || "",
+    members: memberships.filter((membership) => membership.server_id === server.id).length,
+    joined: joinedServerIds.includes(server.id),
+    channels: channelsByServerId[server.id] ?? [],
+    posts: postsByServerId[server.id] ?? [],
+  }));
+  const activeServerId = mappedServers.some((server) => server.id === previousCommunity.activeServerId)
+    ? previousCommunity.activeServerId
+    : mappedServers[0]?.id || "";
+  const activeServer = mappedServers.find((server) => server.id === activeServerId);
+  const activeChannelId = activeServer?.channels.some((channel) => channel.id === previousCommunity.activeChannelId)
+    ? previousCommunity.activeChannelId
+    : activeServer?.channels[0]?.id || "";
+
+  return {
+    ...previousCommunity,
+    servers: mappedServers,
+    joinedServerIds,
+    activeServerId,
+    activeChannelId,
+    activeChatChannelId: previousCommunity.activeChatChannelId || "",
+    loading: false,
+    error: "",
+  };
+}
+
 function App() {
   const [state, setState] = useState(loadSavedState);
   const [searchQuery, setSearchQuery] = useState("");
@@ -1813,9 +1974,11 @@ function App() {
   const [jobNavigationDirection, setJobNavigationDirection] = useState(null);
   const [helpPanelOpen, setHelpPanelOpen] = useState(false);
   const [supportPanelOpen, setSupportPanelOpen] = useState(false);
+  const [communityServerForm, setCommunityServerForm] = useState({ name: "", description: "" });
   const [communityChannelForm, setCommunityChannelForm] = useState({ name: "", topic: "" });
   const [communityMessageDraft, setCommunityMessageDraft] = useState("");
   const [communityPostDraft, setCommunityPostDraft] = useState("");
+  const [communityCommentDrafts, setCommunityCommentDrafts] = useState({});
   const [supportMessageDraft, setSupportMessageDraft] = useState("");
   const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
   const isStudent = state.auth.isAuthenticated && state.auth.accountRole === "Student";
@@ -2054,6 +2217,90 @@ function App() {
 
     return () => window.clearInterval(intervalId);
   }, [announcementSlides.length]);
+
+  async function refreshCommunityFromSupabase() {
+    if (!hasSupabaseConfig || !supabase || !state.auth.accountId || !hasActiveSubscription) return;
+
+    setState((current) => ({
+      ...current,
+      community: {
+        ...(current.community ?? defaultState.community),
+        loading: true,
+        error: "",
+      },
+    }));
+
+    const [
+      serversResult,
+      membershipsResult,
+      channelsResult,
+      messagesResult,
+      postsResult,
+      reactionsResult,
+      commentsResult,
+    ] = await Promise.all([
+      supabase.from("community_servers").select("*").order("created_at", { ascending: true }),
+      supabase.from("community_server_members").select("*"),
+      supabase.from("community_channels").select("*").order("created_at", { ascending: true }),
+      supabase.from("community_channel_messages").select("*").order("created_at", { ascending: true }),
+      supabase.from("community_posts").select("*").order("created_at", { ascending: false }),
+      supabase.from("community_post_reactions").select("*"),
+      supabase.from("community_post_comments").select("*").order("created_at", { ascending: true }),
+    ]);
+
+    const error =
+      serversResult.error ||
+      membershipsResult.error ||
+      channelsResult.error ||
+      messagesResult.error ||
+      postsResult.error ||
+      reactionsResult.error ||
+      commentsResult.error;
+
+    if (error) {
+      setState((current) => ({
+        ...current,
+        community: {
+          ...(current.community ?? defaultState.community),
+          loading: false,
+          error: getCommunityErrorMessage(error, "Community sync failed"),
+        },
+      }));
+      return;
+    }
+
+    setState((current) => ({
+      ...current,
+      community: buildCommunityFromRecords({
+        servers: serversResult.data ?? [],
+        memberships: membershipsResult.data ?? [],
+        channels: channelsResult.data ?? [],
+        messages: messagesResult.data ?? [],
+        posts: postsResult.data ?? [],
+        reactions: reactionsResult.data ?? [],
+        comments: commentsResult.data ?? [],
+        currentUserId: current.auth.accountId,
+        previousCommunity: current.community ?? defaultState.community,
+      }),
+    }));
+  }
+
+  useEffect(() => {
+    if (state.activeSidebar !== "community" || !hasActiveSubscription) return undefined;
+
+    refreshCommunityFromSupabase().catch((error) => {
+      setState((current) => ({
+        ...current,
+        community: {
+          ...(current.community ?? defaultState.community),
+          loading: false,
+          error: getCommunityErrorMessage(error, "Community sync failed"),
+        },
+      }));
+    });
+
+    return undefined;
+  }, [state.activeSidebar, hasActiveSubscription, state.auth.accountId]);
 
   useEffect(() => {
     if (activeAnnouncement >= announcementSlides.length && announcementSlides.length > 0) {
@@ -2487,11 +2734,18 @@ function App() {
     certificationCategories.findIndex((category) => category === state.certificationFilter),
     0,
   );
-  const communityChannels = state.community?.channels ?? defaultCommunityChannels;
+  const communityServers = state.community?.servers ?? defaultCommunityServers;
+  const activeCommunityServer =
+    communityServers.find((server) => server.id === state.community?.activeServerId) ??
+    communityServers[0];
+  const joinedCommunityServerIds = state.community?.joinedServerIds ?? [];
+  const communityChannels = activeCommunityServer?.channels ?? [];
   const activeCommunityChannel =
     communityChannels.find((channel) => channel.id === state.community?.activeChannelId) ??
     communityChannels[0];
-  const joinedCommunityChannelIds = state.community?.joinedChannelIds ?? [];
+  const activeChatChannel =
+    communityChannels.find((channel) => channel.id === state.community?.activeChatChannelId) ??
+    activeCommunityChannel;
   const currentCommunityAuthor = state.auth.isAuthenticated
     ? state.profile.fullName || state.auth.accountName || "SkillBridge User"
     : "Guest User";
@@ -4009,97 +4263,263 @@ function App() {
     }));
   }
 
-  function createCommunityChannel(event) {
+  async function createCommunityServer(event) {
     event.preventDefault();
-    const cleanName = communityChannelForm.name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, "")
-      .replace(/\s+/g, "-")
-      .slice(0, 32);
-    if (!cleanName) return;
+    const name = communityServerForm.name.trim();
+    if (!name) return;
+
+    const description = communityServerForm.description.trim() || "A new SkillBridge community server.";
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
+      const { data, error } = await supabase
+        .from("community_servers")
+        .insert({
+          name,
+          description,
+          owner_id: state.auth.accountId,
+        })
+        .select("id")
+        .single();
+
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Server creation failed") },
+        }));
+        return;
+      }
+
+      await supabase.from("community_server_members").upsert({ server_id: data.id, user_id: state.auth.accountId });
+      setCommunityServerForm({ name: "", description: "" });
+      await refreshCommunityFromSupabase();
+      setState((current) => ({
+        ...current,
+        community: { ...(current.community ?? defaultState.community), activeServerId: data.id },
+      }));
+      return;
+    }
+
+    const serverId = `${normalizeCommunitySlug(name)}-${Date.now()}`;
+    updateCommunity((community) => ({
+      ...community,
+      activeServerId: serverId,
+      activeChannelId: "",
+      joinedServerIds: [...new Set([...(community.joinedServerIds ?? []), serverId])],
+      servers: [
+        ...(community.servers ?? []),
+        {
+          id: serverId,
+          name,
+          description,
+          members: 1,
+          joined: true,
+          channels: [],
+          posts: [],
+        },
+      ],
+    }));
+    setCommunityServerForm({ name: "", description: "" });
+  }
+
+  async function joinCommunityServer(serverId) {
+    const selectedServer = communityServers.find((server) => server.id === serverId);
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
+      const { error } = await supabase
+        .from("community_server_members")
+        .upsert({ server_id: serverId, user_id: state.auth.accountId });
+
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Unable to join server") },
+        }));
+        return;
+      }
+
+      await refreshCommunityFromSupabase();
+      setState((current) => ({
+        ...current,
+        community: {
+          ...(current.community ?? defaultState.community),
+          activeServerId: serverId,
+          activeChannelId: selectedServer?.channels?.[0]?.id || "",
+          activeChatChannelId: selectedServer?.channels?.[0]?.id || "__server__",
+        },
+      }));
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      activeServerId: serverId,
+      activeChannelId: selectedServer?.channels?.[0]?.id || "",
+      activeChatChannelId: selectedServer?.channels?.[0]?.id || "__server__",
+      joinedServerIds: [...new Set([...(community.joinedServerIds ?? []), serverId])],
+      servers: (community.servers ?? []).map((server) =>
+        server.id === serverId
+          ? { ...server, joined: true, members: server.joined ? server.members : server.members + 1 }
+          : server,
+      ),
+    }));
+  }
+
+  function openCommunityServer(serverId) {
+    const selectedServer = communityServers.find((server) => server.id === serverId);
+    updateCommunity((community) => ({
+      ...community,
+      activeServerId: serverId,
+      activeChannelId: selectedServer?.channels?.[0]?.id || "",
+      activeChatChannelId: selectedServer?.channels?.[0]?.id || "__server__",
+    }));
+  }
+
+  async function createCommunityChannel(event) {
+    event.preventDefault();
+    const cleanName = normalizeCommunitySlug(communityChannelForm.name, "");
+    if (!cleanName || !activeCommunityServer) return;
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
+      const { data, error } = await supabase
+        .from("community_channels")
+        .insert({
+          server_id: activeCommunityServer.id,
+          name: cleanName,
+          topic: communityChannelForm.topic.trim() || "A new SkillBridge channel.",
+          created_by: state.auth.accountId,
+        })
+        .select("id")
+        .single();
+
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Channel creation failed") },
+        }));
+        return;
+      }
+
+      setCommunityChannelForm({ name: "", topic: "" });
+      await refreshCommunityFromSupabase();
+      setState((current) => ({
+        ...current,
+        community: { ...(current.community ?? defaultState.community), activeChannelId: data.id, activeChatChannelId: data.id },
+      }));
+      return;
+    }
 
     const channelId = `${cleanName}-${Date.now()}`;
     const channel = {
       id: channelId,
       name: cleanName,
       topic: communityChannelForm.topic.trim() || "A new SkillBridge community channel.",
-      members: 1,
-      joined: true,
-      unread: 0,
-      messages: [
-        {
-          id: Date.now(),
-          author: currentCommunityAuthor,
-          role: currentCommunityRole,
-          text: `Created #${cleanName}.`,
-          time: "Now",
-        },
-      ],
-      posts: [],
+      messages: [],
     };
 
     updateCommunity((community) => ({
       ...community,
       activeChannelId: channelId,
-      joinedChannelIds: [...new Set([...(community.joinedChannelIds ?? []), channelId])],
-      channels: [...(community.channels ?? []), channel],
+      activeChatChannelId: channelId,
+      servers: (community.servers ?? []).map((server) =>
+        server.id === activeCommunityServer.id
+          ? { ...server, channels: [...(server.channels ?? []), channel] }
+          : server,
+      ),
     }));
     setCommunityChannelForm({ name: "", topic: "" });
   }
 
-  function joinCommunityChannel(channelId) {
+  function openCommunityChannel(channelId) {
     updateCommunity((community) => ({
       ...community,
       activeChannelId: channelId,
-      joinedChannelIds: [...new Set([...(community.joinedChannelIds ?? []), channelId])],
-      channels: (community.channels ?? []).map((channel) =>
-        channel.id === channelId
-          ? { ...channel, joined: true, members: channel.joined ? channel.members : channel.members + 1, unread: 0 }
-          : channel,
-      ),
+      activeChatChannelId: channelId,
     }));
   }
 
-  function sendCommunityMessage(event) {
+  async function sendCommunityMessage(event) {
     event.preventDefault();
     const text = communityMessageDraft.trim();
-    if (!text || !activeCommunityChannel) return;
+    if (!text || !activeChatChannel) return;
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
+      const { error } = await supabase.from("community_channel_messages").insert({
+        channel_id: activeChatChannel.id,
+        author_id: state.auth.accountId,
+        author_name: currentCommunityAuthor,
+        author_role: currentCommunityRole,
+        body: text,
+      });
+
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Message failed") },
+        }));
+        return;
+      }
+
+      setCommunityMessageDraft("");
+      await refreshCommunityFromSupabase();
+      return;
+    }
 
     updateCommunity((community) => ({
       ...community,
-      channels: (community.channels ?? []).map((channel) =>
-        channel.id === activeCommunityChannel.id
+      servers: (community.servers ?? []).map((server) =>
+        server.id === activeCommunityServer?.id
           ? {
-              ...channel,
-              messages: [
-                ...channel.messages,
-                {
-                  id: Date.now(),
-                  author: currentCommunityAuthor,
-                  role: currentCommunityRole,
-                  text,
-                  time: "Now",
-                },
-              ],
+              ...server,
+              channels: (server.channels ?? []).map((channel) =>
+                channel.id === activeChatChannel.id
+                  ? {
+                      ...channel,
+                      messages: [
+                        ...(channel.messages ?? []),
+                        { id: Date.now(), author: currentCommunityAuthor, role: currentCommunityRole, text, time: "Now" },
+                      ],
+                    }
+                  : channel,
+              ),
             }
-          : channel,
+          : server,
       ),
     }));
     setCommunityMessageDraft("");
   }
 
-  function createCommunityPost(event) {
+  async function createCommunityPost(event) {
     event.preventDefault();
     const text = communityPostDraft.trim();
-    if (!text || !activeCommunityChannel) return;
+    if (!text || !activeCommunityServer) return;
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
+      const { error } = await supabase.from("community_posts").insert({
+        server_id: activeCommunityServer.id,
+        author_id: state.auth.accountId,
+        author_name: currentCommunityAuthor,
+        author_role: currentCommunityRole,
+        body: text,
+      });
+
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Post failed") },
+        }));
+        return;
+      }
+
+      setCommunityPostDraft("");
+      await refreshCommunityFromSupabase();
+      return;
+    }
 
     updateCommunity((community) => ({
       ...community,
-      channels: (community.channels ?? []).map((channel) =>
-        channel.id === activeCommunityChannel.id
+      servers: (community.servers ?? []).map((server) =>
+        server.id === activeCommunityServer.id
           ? {
-              ...channel,
+              ...server,
               posts: [
                 {
                   id: Date.now(),
@@ -4107,16 +4527,110 @@ function App() {
                   role: currentCommunityRole,
                   text,
                   likes: 0,
-                  comments: 0,
+                  likedByMe: false,
+                  comments: [],
                   time: "Now",
                 },
-                ...channel.posts,
+                ...(server.posts ?? []),
               ],
             }
-          : channel,
+          : server,
       ),
     }));
     setCommunityPostDraft("");
+  }
+
+  async function toggleCommunityPostReaction(postId) {
+    const server = activeCommunityServer;
+    const post = server?.posts.find((item) => item.id === postId);
+    if (!server || !post) return;
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
+      const request = post.likedByMe
+        ? supabase.from("community_post_reactions").delete().eq("post_id", postId).eq("user_id", state.auth.accountId)
+        : supabase.from("community_post_reactions").insert({ post_id: postId, user_id: state.auth.accountId });
+      const { error } = await request;
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Reaction failed") },
+        }));
+        return;
+      }
+      await refreshCommunityFromSupabase();
+      return;
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      servers: (community.servers ?? []).map((item) =>
+        item.id === server.id
+          ? {
+              ...item,
+              posts: (item.posts ?? []).map((currentPost) =>
+                currentPost.id === postId
+                  ? {
+                      ...currentPost,
+                      likedByMe: !currentPost.likedByMe,
+                      likes: Math.max(0, (currentPost.likes ?? 0) + (currentPost.likedByMe ? -1 : 1)),
+                    }
+                  : currentPost,
+              ),
+            }
+          : item,
+      ),
+    }));
+  }
+
+  async function createCommunityComment(event, postId) {
+    event.preventDefault();
+    const text = String(communityCommentDrafts[postId] || "").trim();
+    if (!text || !activeCommunityServer) return;
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
+      const { error } = await supabase.from("community_post_comments").insert({
+        post_id: postId,
+        author_id: state.auth.accountId,
+        author_name: currentCommunityAuthor,
+        author_role: currentCommunityRole,
+        body: text,
+      });
+
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Comment failed") },
+        }));
+        return;
+      }
+
+      setCommunityCommentDrafts((current) => ({ ...current, [postId]: "" }));
+      await refreshCommunityFromSupabase();
+      return;
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      servers: (community.servers ?? []).map((server) =>
+        server.id === activeCommunityServer.id
+          ? {
+              ...server,
+              posts: (server.posts ?? []).map((post) =>
+                post.id === postId
+                  ? {
+                      ...post,
+                      comments: [
+                        ...(post.comments ?? []),
+                        { id: Date.now(), author: currentCommunityAuthor, role: currentCommunityRole, text, time: "Now" },
+                      ],
+                    }
+                  : post,
+              ),
+            }
+          : server,
+      ),
+    }));
+    setCommunityCommentDrafts((current) => ({ ...current, [postId]: "" }));
   }
 
   function sendSupportMessage(event) {
@@ -6458,59 +6972,61 @@ function App() {
           <PremiumLockScreen pageName="Community" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
         )}
 
-        {!isAdmin && state.activeSidebar === "community" && hasActiveSubscription && activeCommunityChannel && (
+        {!isAdmin && state.activeSidebar === "community" && hasActiveSubscription && activeCommunityServer && (
           <section className="community-section">
             <div className="applications-head">
               <div>
                 <h1>Community</h1>
-                <p>Create channels, join SkillBridge groups, chat with peers, and share updates with the community.</p>
+                <p>Find and join servers, browse their channels, chat with peers, and share posts with subscribed SkillBridge users.</p>
               </div>
             </div>
+
+            {state.community?.error ? <p className="form-feedback">{state.community.error}</p> : null}
 
             <div className="community-layout">
               <aside className="community-sidebar">
                 <div className="community-sidebar-head">
-                  <span className="section-kicker">Channels</span>
-                  <strong>{communityChannels.length} active</strong>
+                  <span className="section-kicker">Servers</span>
+                  <strong>{communityServers.length} available</strong>
                 </div>
 
-                <div className="community-channel-list">
-                  {communityChannels.map((channel) => {
-                    const joined = joinedCommunityChannelIds.includes(channel.id) || channel.joined;
-                    const active = activeCommunityChannel.id === channel.id;
+                <div className="community-server-list">
+                  {communityServers.map((server) => {
+                    const joined = joinedCommunityServerIds.includes(server.id) || server.joined;
+                    const active = activeCommunityServer.id === server.id;
 
                     return (
                       <button
-                        key={channel.id}
-                        className={`community-channel${active ? " active" : ""}`}
+                        key={server.id}
+                        className={`community-server${active ? " active" : ""}`}
                         type="button"
-                        onClick={() => joinCommunityChannel(channel.id)}
+                        onClick={() => (joined ? openCommunityServer(server.id) : joinCommunityServer(server.id))}
                       >
-                        <Hash size={15} />
-                        <span>{channel.name}</span>
-                        {joined ? <strong>{channel.unread}</strong> : <em>Join</em>}
+                        <Users size={15} />
+                        <span>{server.name}</span>
+                        <em>{joined ? "Open" : "Join"}</em>
                       </button>
                     );
                   })}
                 </div>
 
-                <form className="community-create-card" onSubmit={createCommunityChannel}>
-                  <span className="section-kicker">Create Channel</span>
+                <form className="community-create-card" onSubmit={createCommunityServer}>
+                  <span className="section-kicker">Create Server</span>
                   <input
                     type="text"
-                    value={communityChannelForm.name}
-                    onChange={(event) => setCommunityChannelForm((current) => ({ ...current, name: event.target.value }))}
-                    placeholder="channel-name"
+                    value={communityServerForm.name}
+                    onChange={(event) => setCommunityServerForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="Server name"
                   />
                   <textarea
-                    value={communityChannelForm.topic}
-                    onChange={(event) => setCommunityChannelForm((current) => ({ ...current, topic: event.target.value }))}
-                    placeholder="What is this channel for?"
+                    value={communityServerForm.description}
+                    onChange={(event) => setCommunityServerForm((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="What is this server for?"
                     rows={3}
                   />
                   <button className="profile-primary-button small" type="submit">
                     <Plus size={14} />
-                    Create
+                    Create Server
                   </button>
                 </form>
               </aside>
@@ -6518,94 +7034,133 @@ function App() {
               <div className="community-main">
                 <div className="community-channel-hero">
                   <div>
-                    <span className="section-kicker">#{activeCommunityChannel.name}</span>
-                    <h2>{activeCommunityChannel.topic}</h2>
+                    <span className="section-kicker">{activeCommunityServer.joined ? "Joined Server" : "Available Server"}</span>
+                    <h2>{activeCommunityServer.name}</h2>
+                    <p>{activeCommunityServer.description}</p>
                   </div>
                   <div className="community-channel-stats">
-                    <span>{activeCommunityChannel.members.toLocaleString()} members</span>
-                    <span>{activeCommunityChannel.posts.length} posts</span>
+                    <span>{activeCommunityServer.members.toLocaleString()} members</span>
+                    <span>{activeCommunityServer.channels.length} channels</span>
+                    <span>{activeCommunityServer.posts.length} posts</span>
                   </div>
                 </div>
 
-                <div className="community-content-grid">
-                  <section className="community-chat-card">
-                    <div className="community-card-head">
-                      <MessageCircle size={16} />
-                      <strong>Channel Chat</strong>
-                    </div>
+                {!activeCommunityServer.joined && !joinedCommunityServerIds.includes(activeCommunityServer.id) ? (
+                  <div className="profile-empty-card community-join-card">
+                    <strong>Join this server to see channels and participate.</strong>
+                    <button className="profile-primary-button small" type="button" onClick={() => joinCommunityServer(activeCommunityServer.id)}>
+                      Join Server
+                    </button>
+                  </div>
+                ) : (
+                  <div className="community-content-grid feed-only">
+                    <section className="community-feed-card">
+                      <div className="community-card-head">
+                        <AtSign size={16} />
+                        <strong>Community Feed</strong>
+                        <button className="ghost-action community-open-server" type="button" onClick={() => openCommunityServer(activeCommunityServer.id)}>
+                          <Hash size={14} />
+                          Open Channels
+                        </button>
+                      </div>
 
-                    <div className="community-message-list">
-                      {activeCommunityChannel.messages.map((message) => (
-                        <article key={message.id} className="community-message">
-                          <div className="community-avatar">{message.author.charAt(0)}</div>
-                          <div>
-                            <div className="community-message-meta">
-                              <strong>{message.author}</strong>
-                              <span>{message.role}</span>
-                              <span>{message.time}</span>
-                            </div>
-                            <p>{message.text}</p>
-                          </div>
-                        </article>
-                      ))}
-                    </div>
+                      <form className="community-post-box" onSubmit={createCommunityPost}>
+                        <textarea
+                          value={communityPostDraft}
+                          onChange={(event) => setCommunityPostDraft(event.target.value)}
+                          placeholder={`Post to ${activeCommunityServer.name}...`}
+                          rows={4}
+                        />
+                        <button className="roadmap-cta" type="submit">
+                          <Plus size={14} />
+                          Post
+                        </button>
+                      </form>
 
-                    <form className="community-composer" onSubmit={sendCommunityMessage}>
-                      <input
-                        type="text"
-                        value={communityMessageDraft}
-                        onChange={(event) => setCommunityMessageDraft(event.target.value)}
-                        placeholder={`Message #${activeCommunityChannel.name}`}
-                      />
-                      <button type="submit" aria-label="Send channel message">
-                        <Send size={16} />
-                      </button>
-                    </form>
-                  </section>
+                      <div className="community-post-list">
+                        {activeCommunityServer.posts.length > 0 ? (
+                          activeCommunityServer.posts.map((post) => (
+                            <article key={post.id} className="community-post">
+                              <div className="community-message-meta">
+                                <strong>{post.author}</strong>
+                                <span>{post.role}</span>
+                                <span>{post.time}</span>
+                              </div>
+                              <p>{post.text}</p>
+                              <div className="community-post-actions">
+                                <button
+                                  className={`community-reaction-button${post.likedByMe ? " active" : ""}`}
+                                  type="button"
+                                  onClick={() => toggleCommunityPostReaction(post.id)}
+                                >
+                                  <Heart size={14} />
+                                  {post.likes}
+                                </button>
+                                <span>{post.comments.length} comments</span>
+                              </div>
 
-                  <section className="community-feed-card">
-                    <div className="community-card-head">
-                      <AtSign size={16} />
-                      <strong>Community Feed</strong>
-                    </div>
+                              <div className="community-comment-list">
+                                {post.comments.map((comment) => (
+                                  <div key={comment.id} className="community-comment">
+                                    <strong>{comment.author}</strong>
+                                    <span>{comment.time}</span>
+                                    <p>{comment.text}</p>
+                                  </div>
+                                ))}
+                              </div>
 
-                    <form className="community-post-box" onSubmit={createCommunityPost}>
-                      <textarea
-                        value={communityPostDraft}
-                        onChange={(event) => setCommunityPostDraft(event.target.value)}
-                        placeholder="Post an update, resource, question, or win..."
-                        rows={4}
-                      />
-                      <button className="roadmap-cta" type="submit">
-                        <Plus size={14} />
-                        Post
-                      </button>
-                    </form>
-
-                    <div className="community-post-list">
-                      {activeCommunityChannel.posts.length > 0 ? (
-                        activeCommunityChannel.posts.map((post) => (
-                          <article key={post.id} className="community-post">
-                            <div className="community-message-meta">
-                              <strong>{post.author}</strong>
-                              <span>{post.role}</span>
-                              <span>{post.time}</span>
-                            </div>
-                            <p>{post.text}</p>
-                            <div className="community-post-actions">
-                              <span>{post.likes} likes</span>
-                              <span>{post.comments} comments</span>
-                            </div>
-                          </article>
-                        ))
-                      ) : (
-                        <div className="profile-empty-card">No posts yet. Start the conversation for this channel.</div>
-                      )}
-                    </div>
-                  </section>
-                </div>
+                              <form className="community-comment-form" onSubmit={(event) => createCommunityComment(event, post.id)}>
+                                <input
+                                  type="text"
+                                  value={communityCommentDrafts[post.id] ?? ""}
+                                  onChange={(event) => setCommunityCommentDrafts((current) => ({ ...current, [post.id]: event.target.value }))}
+                                  placeholder="Write a comment..."
+                                />
+                                <button type="submit" aria-label="Post comment">
+                                  <Send size={14} />
+                                </button>
+                              </form>
+                            </article>
+                          ))
+                        ) : (
+                          <div className="profile-empty-card">No posts yet. Start the conversation for this server.</div>
+                        )}
+                      </div>
+                    </section>
+                  </div>
+                )}
               </div>
             </div>
+          </section>
+        )}
+
+        {!isAdmin && state.activeSidebar === "community" && hasActiveSubscription && !activeCommunityServer && (
+          <section className="community-section">
+            <div className="applications-head">
+              <div>
+                <h1>Community</h1>
+                <p>Create a server to start the SkillBridge community space.</p>
+              </div>
+            </div>
+            <form className="community-create-card community-empty-create" onSubmit={createCommunityServer}>
+              <span className="section-kicker">Create Server</span>
+              <input
+                type="text"
+                value={communityServerForm.name}
+                onChange={(event) => setCommunityServerForm((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Server name"
+              />
+              <textarea
+                value={communityServerForm.description}
+                onChange={(event) => setCommunityServerForm((current) => ({ ...current, description: event.target.value }))}
+                placeholder="What is this server for?"
+                rows={3}
+              />
+              <button className="profile-primary-button small" type="submit">
+                <Plus size={14} />
+                Create Server
+              </button>
+            </form>
           </section>
         )}
       </main>
@@ -6708,6 +7263,131 @@ function App() {
                   Send Message
                 </button>
               </form>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {state.community?.activeChatChannelId && activeCommunityServer && (
+        <div
+          className="profile-overlay job-modal-overlay help-overlay"
+          onClick={() =>
+            setState((current) => ({
+              ...current,
+              community: { ...(current.community ?? defaultState.community), activeChatChannelId: "" },
+            }))
+          }
+        >
+          <aside className="profile-panel job-modal community-chat-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="profile-panel-header help-panel-header">
+              <div>
+                <span className="section-kicker">Server</span>
+                <h2>{activeCommunityServer?.name || "Community Server"}</h2>
+              </div>
+              <button
+                className="profile-close"
+                type="button"
+                onClick={() =>
+                  setState((current) => ({
+                    ...current,
+                    community: { ...(current.community ?? defaultState.community), activeChatChannelId: "" },
+                  }))
+                }
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="profile-panel-body community-chat-modal-body">
+              <aside className="community-modal-sidebar">
+                <div className="community-card-head">
+                  <Hash size={16} />
+                  <strong>Channels</strong>
+                </div>
+
+                <div className="community-channel-list">
+                  {communityChannels.length > 0 ? (
+                    communityChannels.map((channel) => (
+                      <button
+                        key={channel.id}
+                        className={`community-channel${activeChatChannel?.id === channel.id ? " active" : ""}`}
+                        type="button"
+                        onClick={() => openCommunityChannel(channel.id)}
+                      >
+                        <Hash size={15} />
+                        <span>{channel.name}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="profile-empty-card">No channels yet.</div>
+                  )}
+                </div>
+
+                <form className="community-create-card" onSubmit={createCommunityChannel}>
+                  <span className="section-kicker">Create Channel</span>
+                  <input
+                    type="text"
+                    value={communityChannelForm.name}
+                    onChange={(event) => setCommunityChannelForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="channel-name"
+                  />
+                  <textarea
+                    value={communityChannelForm.topic}
+                    onChange={(event) => setCommunityChannelForm((current) => ({ ...current, topic: event.target.value }))}
+                    placeholder="What is this channel for?"
+                    rows={3}
+                  />
+                  <button className="profile-primary-button small" type="submit">
+                    <Plus size={14} />
+                    Create Channel
+                  </button>
+                </form>
+              </aside>
+
+              <section className="community-modal-chat">
+                <div className="community-modal-chat-head">
+                  <span className="section-kicker">{activeChatChannel ? `#${activeChatChannel.name}` : "No channel selected"}</span>
+                  <h3>{activeChatChannel?.topic || "Create or select a channel to start chatting."}</h3>
+                </div>
+
+                {activeChatChannel ? (
+                  <>
+                    <div className="community-message-list">
+                      {(activeChatChannel.messages ?? []).length > 0 ? (
+                        activeChatChannel.messages.map((message) => (
+                          <article key={message.id} className="community-message">
+                            <div className="community-avatar">{message.author.charAt(0)}</div>
+                            <div>
+                              <div className="community-message-meta">
+                                <strong>{message.author}</strong>
+                                <span>{message.role}</span>
+                                <span>{message.time}</span>
+                              </div>
+                              <p>{message.text}</p>
+                            </div>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="profile-empty-card">No messages yet. Start the channel chat.</div>
+                      )}
+                    </div>
+
+                    <form className="community-composer" onSubmit={sendCommunityMessage}>
+                      <input
+                        type="text"
+                        value={communityMessageDraft}
+                        onChange={(event) => setCommunityMessageDraft(event.target.value)}
+                        placeholder={`Message #${activeChatChannel.name}`}
+                      />
+                      <button type="submit" aria-label="Send channel message">
+                        <Send size={16} />
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  <div className="profile-empty-card">Create a channel from the sidebar to start the server chat.</div>
+                )}
+              </section>
             </div>
           </aside>
         </div>
