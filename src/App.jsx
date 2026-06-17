@@ -17,12 +17,15 @@ import {
   FileText,
   Globe,
   Heart,
+  Hash,
   LineChart,
   Map as MapIcon,
   MapPin,
+  MessageCircle,
   MoonStar,
   Plus,
   Search,
+  Send,
   ShieldCheck,
   SquareArrowOutUpRight,
   Star,
@@ -45,10 +48,11 @@ const sidebarItems = [
   { id: "applications", label: "Applications", icon: FileText },
   { id: "roadmap", label: "Roadmap", icon: MapIcon },
   { id: "training", label: "Development", icon: BookOpen },
+  { id: "community", label: "Community", icon: MessageCircle },
   { id: "subscription", label: "Subscription", icon: CreditCard },
 ];
 
-const premiumApplicantPages = ["training", "roadmap"];
+const premiumApplicantPages = ["training", "roadmap", "community"];
 const legacyTrainingPages = ["progress", "mentorship", "certifications"];
 const trainingTabs = [
   { id: "progress", label: "Training" },
@@ -96,6 +100,76 @@ const helpFaqs = [
   {
     question: "What can admins do?",
     answer: "Admin accounts use a separate dashboard for user management, course management, certification approvals, mentor and employer verification, analytics, revenue, and content management.",
+  },
+];
+
+const defaultCommunityChannels = [
+  {
+    id: "frontend-lounge",
+    name: "frontend-lounge",
+    topic: "React, UI reviews, portfolio polish, and interview prep.",
+    members: 248,
+    joined: true,
+    unread: 3,
+    messages: [
+      { id: 1, author: "Mika Reyes", role: "Frontend Intern", text: "Anyone reviewing React portfolios today? I can trade feedback after class.", time: "9:14 AM" },
+      { id: 2, author: "SkillBridge Coach", role: "Mentor", text: "Drop screenshots or repo links here. Keep feedback specific and kind.", time: "9:21 AM" },
+    ],
+    posts: [
+      {
+        id: 1,
+        author: "Lena Torres",
+        role: "Mentor",
+        text: "Portfolio tip: lead each project with the problem you solved before listing the tech stack.",
+        likes: 42,
+        comments: 8,
+        time: "Today",
+      },
+    ],
+  },
+  {
+    id: "ojt-openings",
+    name: "ojt-openings",
+    topic: "Shared internships, OJT leads, referral notes, and application reminders.",
+    members: 413,
+    joined: false,
+    unread: 0,
+    messages: [
+      { id: 1, author: "Andrea Lim", role: "Applicant", text: "Northstar has a QA internship closing Friday. Check the Discover tab too.", time: "Yesterday" },
+    ],
+    posts: [
+      {
+        id: 1,
+        author: "Marco Santos",
+        role: "Student",
+        text: "I made a tracker template for applications and interview dates. Happy to share the format here.",
+        likes: 31,
+        comments: 5,
+        time: "Yesterday",
+      },
+    ],
+  },
+  {
+    id: "career-wins",
+    name: "career-wins",
+    topic: "Celebrate accepted applications, certifications, callbacks, and shipped projects.",
+    members: 167,
+    joined: true,
+    unread: 1,
+    messages: [
+      { id: 1, author: "Nina Cruz", role: "Applicant", text: "Passed my first technical interview. The SQL practice questions helped a lot.", time: "8:03 AM" },
+    ],
+    posts: [
+      {
+        id: 1,
+        author: "Nina Cruz",
+        role: "Applicant",
+        text: "Small win: got shortlisted after revising my resume summary from the profile feedback.",
+        likes: 58,
+        comments: 14,
+        time: "Today",
+      },
+    ],
   },
 ];
 
@@ -1455,6 +1529,12 @@ const defaultState = {
   announcements: [],
   adminAnnouncements: [],
   careerRoadmaps: [],
+  community: {
+    activeChannelId: "frontend-lounge",
+    joinedChannelIds: ["frontend-lounge", "career-wins"],
+    channels: defaultCommunityChannels,
+  },
+  supportMessages: [],
   roadmapStatus: {
     loading: false,
     error: "",
@@ -1518,6 +1598,8 @@ function buildPersistedState(state) {
     profileCertificates: state.profileCertificates,
     volunteerActivities: state.volunteerActivities,
     careerRoadmaps: state.careerRoadmaps,
+    community: state.community,
+    supportMessages: state.supportMessages,
     roadmapStatus: {
       ...state.roadmapStatus,
       loading: false,
@@ -1542,8 +1624,12 @@ function loadSavedState() {
     return {
       ...defaultState,
       ...parsed,
-      activeSidebar: legacyTrainingPages.includes(parsed.activeSidebar) ? "training" : parsed.activeSidebar,
-      trainingTab: legacyTrainingPages.includes(parsed.activeSidebar) ? parsed.activeSidebar : parsed.trainingTab || defaultState.trainingTab,
+      activeSidebar: parsed.activeSidebar === "training" && parsed.trainingTab === "community"
+        ? "community"
+        : legacyTrainingPages.includes(parsed.activeSidebar) ? "training" : parsed.activeSidebar,
+      trainingTab: legacyTrainingPages.includes(parsed.activeSidebar)
+        ? parsed.activeSidebar
+        : trainingTabs.some((tab) => tab.id === parsed.trainingTab) ? parsed.trainingTab : defaultState.trainingTab,
     };
   } catch {
     window.localStorage.removeItem(STORAGE_KEY);
@@ -1726,6 +1812,11 @@ function App() {
   const [closingJobModal, setClosingJobModal] = useState(false);
   const [jobNavigationDirection, setJobNavigationDirection] = useState(null);
   const [helpPanelOpen, setHelpPanelOpen] = useState(false);
+  const [supportPanelOpen, setSupportPanelOpen] = useState(false);
+  const [communityChannelForm, setCommunityChannelForm] = useState({ name: "", topic: "" });
+  const [communityMessageDraft, setCommunityMessageDraft] = useState("");
+  const [communityPostDraft, setCommunityPostDraft] = useState("");
+  const [supportMessageDraft, setSupportMessageDraft] = useState("");
   const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
   const isStudent = state.auth.isAuthenticated && state.auth.accountRole === "Student";
   const hasActiveSubscription = state.auth.isAuthenticated && state.subscription?.status === "active";
@@ -2396,6 +2487,15 @@ function App() {
     certificationCategories.findIndex((category) => category === state.certificationFilter),
     0,
   );
+  const communityChannels = state.community?.channels ?? defaultCommunityChannels;
+  const activeCommunityChannel =
+    communityChannels.find((channel) => channel.id === state.community?.activeChannelId) ??
+    communityChannels[0];
+  const joinedCommunityChannelIds = state.community?.joinedChannelIds ?? [];
+  const currentCommunityAuthor = state.auth.isAuthenticated
+    ? state.profile.fullName || state.auth.accountName || "SkillBridge User"
+    : "Guest User";
+  const currentCommunityRole = state.profile.jobTitle || state.auth.accountRole || "Applicant";
 
   const appliedCards = useMemo(
     () => {
@@ -3900,6 +4000,143 @@ function App() {
         ? current.certificationPortalVisits
         : [...current.certificationPortalVisits, certId],
     }));
+  }
+
+  function updateCommunity(updater) {
+    setState((current) => ({
+      ...current,
+      community: updater(current.community ?? defaultState.community),
+    }));
+  }
+
+  function createCommunityChannel(event) {
+    event.preventDefault();
+    const cleanName = communityChannelForm.name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .slice(0, 32);
+    if (!cleanName) return;
+
+    const channelId = `${cleanName}-${Date.now()}`;
+    const channel = {
+      id: channelId,
+      name: cleanName,
+      topic: communityChannelForm.topic.trim() || "A new SkillBridge community channel.",
+      members: 1,
+      joined: true,
+      unread: 0,
+      messages: [
+        {
+          id: Date.now(),
+          author: currentCommunityAuthor,
+          role: currentCommunityRole,
+          text: `Created #${cleanName}.`,
+          time: "Now",
+        },
+      ],
+      posts: [],
+    };
+
+    updateCommunity((community) => ({
+      ...community,
+      activeChannelId: channelId,
+      joinedChannelIds: [...new Set([...(community.joinedChannelIds ?? []), channelId])],
+      channels: [...(community.channels ?? []), channel],
+    }));
+    setCommunityChannelForm({ name: "", topic: "" });
+  }
+
+  function joinCommunityChannel(channelId) {
+    updateCommunity((community) => ({
+      ...community,
+      activeChannelId: channelId,
+      joinedChannelIds: [...new Set([...(community.joinedChannelIds ?? []), channelId])],
+      channels: (community.channels ?? []).map((channel) =>
+        channel.id === channelId
+          ? { ...channel, joined: true, members: channel.joined ? channel.members : channel.members + 1, unread: 0 }
+          : channel,
+      ),
+    }));
+  }
+
+  function sendCommunityMessage(event) {
+    event.preventDefault();
+    const text = communityMessageDraft.trim();
+    if (!text || !activeCommunityChannel) return;
+
+    updateCommunity((community) => ({
+      ...community,
+      channels: (community.channels ?? []).map((channel) =>
+        channel.id === activeCommunityChannel.id
+          ? {
+              ...channel,
+              messages: [
+                ...channel.messages,
+                {
+                  id: Date.now(),
+                  author: currentCommunityAuthor,
+                  role: currentCommunityRole,
+                  text,
+                  time: "Now",
+                },
+              ],
+            }
+          : channel,
+      ),
+    }));
+    setCommunityMessageDraft("");
+  }
+
+  function createCommunityPost(event) {
+    event.preventDefault();
+    const text = communityPostDraft.trim();
+    if (!text || !activeCommunityChannel) return;
+
+    updateCommunity((community) => ({
+      ...community,
+      channels: (community.channels ?? []).map((channel) =>
+        channel.id === activeCommunityChannel.id
+          ? {
+              ...channel,
+              posts: [
+                {
+                  id: Date.now(),
+                  author: currentCommunityAuthor,
+                  role: currentCommunityRole,
+                  text,
+                  likes: 0,
+                  comments: 0,
+                  time: "Now",
+                },
+                ...channel.posts,
+              ],
+            }
+          : channel,
+      ),
+    }));
+    setCommunityPostDraft("");
+  }
+
+  function sendSupportMessage(event) {
+    event.preventDefault();
+    const text = supportMessageDraft.trim();
+    if (!text) return;
+
+    setState((current) => ({
+      ...current,
+      supportMessages: [
+        ...(current.supportMessages ?? []),
+        {
+          id: Date.now(),
+          author: currentCommunityAuthor,
+          text,
+          time: "Now",
+        },
+      ],
+    }));
+    setSupportMessageDraft("");
   }
 
   function addSkillFromInput(event) {
@@ -6216,7 +6453,171 @@ function App() {
             </div>
           </section>
         )}
+
+        {!isAdmin && state.activeSidebar === "community" && !hasActiveSubscription && (
+          <PremiumLockScreen pageName="Community" onSubscribe={() => patchState({ activeSidebar: "subscription" })} />
+        )}
+
+        {!isAdmin && state.activeSidebar === "community" && hasActiveSubscription && activeCommunityChannel && (
+          <section className="community-section">
+            <div className="applications-head">
+              <div>
+                <h1>Community</h1>
+                <p>Create channels, join SkillBridge groups, chat with peers, and share updates with the community.</p>
+              </div>
+            </div>
+
+            <div className="community-layout">
+              <aside className="community-sidebar">
+                <div className="community-sidebar-head">
+                  <span className="section-kicker">Channels</span>
+                  <strong>{communityChannels.length} active</strong>
+                </div>
+
+                <div className="community-channel-list">
+                  {communityChannels.map((channel) => {
+                    const joined = joinedCommunityChannelIds.includes(channel.id) || channel.joined;
+                    const active = activeCommunityChannel.id === channel.id;
+
+                    return (
+                      <button
+                        key={channel.id}
+                        className={`community-channel${active ? " active" : ""}`}
+                        type="button"
+                        onClick={() => joinCommunityChannel(channel.id)}
+                      >
+                        <Hash size={15} />
+                        <span>{channel.name}</span>
+                        {joined ? <strong>{channel.unread}</strong> : <em>Join</em>}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <form className="community-create-card" onSubmit={createCommunityChannel}>
+                  <span className="section-kicker">Create Channel</span>
+                  <input
+                    type="text"
+                    value={communityChannelForm.name}
+                    onChange={(event) => setCommunityChannelForm((current) => ({ ...current, name: event.target.value }))}
+                    placeholder="channel-name"
+                  />
+                  <textarea
+                    value={communityChannelForm.topic}
+                    onChange={(event) => setCommunityChannelForm((current) => ({ ...current, topic: event.target.value }))}
+                    placeholder="What is this channel for?"
+                    rows={3}
+                  />
+                  <button className="profile-primary-button small" type="submit">
+                    <Plus size={14} />
+                    Create
+                  </button>
+                </form>
+              </aside>
+
+              <div className="community-main">
+                <div className="community-channel-hero">
+                  <div>
+                    <span className="section-kicker">#{activeCommunityChannel.name}</span>
+                    <h2>{activeCommunityChannel.topic}</h2>
+                  </div>
+                  <div className="community-channel-stats">
+                    <span>{activeCommunityChannel.members.toLocaleString()} members</span>
+                    <span>{activeCommunityChannel.posts.length} posts</span>
+                  </div>
+                </div>
+
+                <div className="community-content-grid">
+                  <section className="community-chat-card">
+                    <div className="community-card-head">
+                      <MessageCircle size={16} />
+                      <strong>Channel Chat</strong>
+                    </div>
+
+                    <div className="community-message-list">
+                      {activeCommunityChannel.messages.map((message) => (
+                        <article key={message.id} className="community-message">
+                          <div className="community-avatar">{message.author.charAt(0)}</div>
+                          <div>
+                            <div className="community-message-meta">
+                              <strong>{message.author}</strong>
+                              <span>{message.role}</span>
+                              <span>{message.time}</span>
+                            </div>
+                            <p>{message.text}</p>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+
+                    <form className="community-composer" onSubmit={sendCommunityMessage}>
+                      <input
+                        type="text"
+                        value={communityMessageDraft}
+                        onChange={(event) => setCommunityMessageDraft(event.target.value)}
+                        placeholder={`Message #${activeCommunityChannel.name}`}
+                      />
+                      <button type="submit" aria-label="Send channel message">
+                        <Send size={16} />
+                      </button>
+                    </form>
+                  </section>
+
+                  <section className="community-feed-card">
+                    <div className="community-card-head">
+                      <AtSign size={16} />
+                      <strong>Community Feed</strong>
+                    </div>
+
+                    <form className="community-post-box" onSubmit={createCommunityPost}>
+                      <textarea
+                        value={communityPostDraft}
+                        onChange={(event) => setCommunityPostDraft(event.target.value)}
+                        placeholder="Post an update, resource, question, or win..."
+                        rows={4}
+                      />
+                      <button className="roadmap-cta" type="submit">
+                        <Plus size={14} />
+                        Post
+                      </button>
+                    </form>
+
+                    <div className="community-post-list">
+                      {activeCommunityChannel.posts.length > 0 ? (
+                        activeCommunityChannel.posts.map((post) => (
+                          <article key={post.id} className="community-post">
+                            <div className="community-message-meta">
+                              <strong>{post.author}</strong>
+                              <span>{post.role}</span>
+                              <span>{post.time}</span>
+                            </div>
+                            <p>{post.text}</p>
+                            <div className="community-post-actions">
+                              <span>{post.likes} likes</span>
+                              <span>{post.comments} comments</span>
+                            </div>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="profile-empty-card">No posts yet. Start the conversation for this channel.</div>
+                      )}
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
       </main>
+
+      <button
+        className="support-fab"
+        type="button"
+        aria-label="Open chat support"
+        onClick={() => setSupportPanelOpen(true)}
+      >
+        <MessageCircle size={22} />
+      </button>
 
       <button
         className="help-fab"
@@ -6257,6 +6658,56 @@ function App() {
                   </details>
                 ))}
               </div>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {supportPanelOpen && (
+        <div className="profile-overlay job-modal-overlay help-overlay" onClick={() => setSupportPanelOpen(false)}>
+          <aside className="profile-panel job-modal support-panel" onClick={(event) => event.stopPropagation()}>
+            <div className="profile-panel-header help-panel-header">
+              <div>
+                <span className="section-kicker">Chat Support</span>
+                <h2>SkillBridge Support</h2>
+              </div>
+              <button className="profile-close" type="button" onClick={() => setSupportPanelOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="profile-panel-body support-panel-body">
+              <div className="support-note">
+                <MessageCircle size={18} />
+                <p>Send a message to support. Replies are not enabled yet while the support API is pending.</p>
+              </div>
+
+              <div className="support-message-list">
+                {(state.supportMessages ?? []).length > 0 ? (
+                  state.supportMessages.map((message) => (
+                    <article key={message.id} className="support-message">
+                      <strong>{message.author}</strong>
+                      <p>{message.text}</p>
+                      <span>{message.time}</span>
+                    </article>
+                  ))
+                ) : (
+                  <div className="profile-empty-card">No support messages yet.</div>
+                )}
+              </div>
+
+              <form className="support-composer" onSubmit={sendSupportMessage}>
+                <textarea
+                  value={supportMessageDraft}
+                  onChange={(event) => setSupportMessageDraft(event.target.value)}
+                  placeholder="Describe what you need help with..."
+                  rows={4}
+                />
+                <button className="profile-primary-button" type="submit">
+                  <Send size={15} />
+                  Send Message
+                </button>
+              </form>
             </div>
           </aside>
         </div>
@@ -6323,8 +6774,8 @@ function App() {
                               }
                             }}
                           >
-                            <span>{String.fromCharCode(65 + optionIndex)}</span>
-                            {option}
+                            <span className="practice-option-letter">{String.fromCharCode(65 + optionIndex)}</span>
+                            <span className="practice-option-label">{option}</span>
                           </button>
                         ))}
                       </div>
