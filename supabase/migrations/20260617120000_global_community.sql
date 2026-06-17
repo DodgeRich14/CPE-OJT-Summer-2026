@@ -17,10 +17,14 @@ create table if not exists public.community_servers (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   description text not null default '',
+  invite_url text,
   owner_id uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.community_servers
+add column if not exists invite_url text;
 
 create table if not exists public.community_server_members (
   server_id uuid not null references public.community_servers(id) on delete cascade,
@@ -182,11 +186,11 @@ on public.community_post_comments
 for insert
 with check ((public.has_active_subscription() or public.is_admin()) and auth.uid() = author_id);
 
-insert into public.community_servers (id, name, description)
+insert into public.community_servers (id, name, description, invite_url)
 values
-  ('11111111-1111-4111-8111-111111111111', 'Frontend Guild', 'React, UI reviews, portfolio polish, and interview prep.'),
-  ('22222222-2222-4222-8222-222222222222', 'OJT Opportunities', 'Shared internships, OJT leads, referral notes, and application reminders.'),
-  ('33333333-3333-4333-8333-333333333333', 'Career Wins', 'Celebrate accepted applications, certifications, callbacks, and shipped projects.')
+  ('11111111-1111-4111-8111-111111111111', 'Frontend Guild', 'React, UI reviews, portfolio polish, and interview prep.', 'https://discord.gg/frontend'),
+  ('22222222-2222-4222-8222-222222222222', 'OJT Opportunities', 'Shared internships, OJT leads, referral notes, and application reminders.', 'https://discord.gg/ojt'),
+  ('33333333-3333-4333-8333-333333333333', 'Career Wins', 'Celebrate accepted applications, certifications, callbacks, and shipped projects.', 'https://discord.gg/careerwins')
 on conflict (id) do nothing;
 
 insert into public.community_channels (id, server_id, name, topic)

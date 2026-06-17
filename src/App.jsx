@@ -75,7 +75,7 @@ const helpFaqs = [
   },
   {
     question: "Why are Roadmap and Development locked?",
-    answer: "Roadmap and Development are premium applicant features. Free applicants can still use Discover, Applications, and Subscription, while subscribed applicants can unlock career roadmaps, training modules, mentorship, and certifications.",
+    answer: "Roadmap, Development, and Community are premium applicant features. Free applicants can still use Discover, Applications, and Subscription, while subscribed applicants can unlock career roadmaps, training modules, mentorship, certifications, and community spaces.",
   },
   {
     question: "How do I generate a career roadmap?",
@@ -84,6 +84,22 @@ const helpFaqs = [
   {
     question: "What is inside Development?",
     answer: "Development contains Training, Mentorship, and Certifications. Training shows course progress and module quizzes, Mentorship lists mentor-led courses, and Certifications links practice resources and official portals.",
+  },
+  {
+    question: "How does Community work?",
+    answer: "Open Community from the sidebar after subscribing. Join a server to view its feed, post updates, react with hearts, comment on posts, and open that server to browse channels.",
+  },
+  {
+    question: "How do I chat in a Community channel?",
+    answer: "In Community, click a joined server to open its server popup. Channels appear on the left, and the selected channel chat appears on the right. You can also create new channels inside the server popup.",
+  },
+  {
+    question: "Can other SkillBridge users see my Community posts?",
+    answer: "Yes. Community servers, channels, posts, reactions, comments, and channel messages are shared globally with other subscribed SkillBridge users.",
+  },
+  {
+    question: "How do I contact support?",
+    answer: "Use the Chat Support button above the Help button. You can send support messages now, but replies are not enabled yet because support chat still needs a dedicated API.",
   },
   {
     question: "How do I take a practice quiz?",
@@ -108,6 +124,7 @@ const defaultCommunityServers = [
     id: "frontend-lounge",
     name: "Frontend Guild",
     description: "React, UI reviews, portfolio polish, and interview prep.",
+    inviteUrl: "https://discord.gg/frontend",
     members: 248,
     joined: true,
     channels: [
@@ -146,6 +163,7 @@ const defaultCommunityServers = [
     id: "ojt-openings",
     name: "OJT Opportunities",
     description: "Shared internships, OJT leads, referral notes, and application reminders.",
+    inviteUrl: "https://discord.gg/ojt",
     members: 413,
     joined: false,
     channels: [
@@ -175,6 +193,7 @@ const defaultCommunityServers = [
     id: "career-wins",
     name: "Career Wins",
     description: "Celebrate accepted applications, certifications, callbacks, and shipped projects.",
+    inviteUrl: "https://discord.gg/careerwins",
     members: 167,
     joined: true,
     channels: [
@@ -1839,6 +1858,26 @@ function normalizeCommunitySlug(value, fallback = "general") {
   return slug || fallback;
 }
 
+function normalizeDiscordInviteUrl(value) {
+  const rawValue = String(value || "").trim();
+  if (!rawValue) return "";
+
+  const withProtocol = /^https?:\/\//i.test(rawValue) ? rawValue : `https://${rawValue}`;
+
+  try {
+    const url = new URL(withProtocol);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    const allowedHosts = new Set(["discord.gg", "discord.com", "discordapp.com"]);
+
+    if (!allowedHosts.has(host)) return "";
+    if (!url.pathname.includes("/invite/") && host !== "discord.gg") return "";
+
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
 function getCommunityErrorMessage(error, fallback) {
   const message = error?.message || "";
 
@@ -1916,6 +1955,7 @@ function buildCommunityFromRecords({
     id: server.id,
     name: server.name || "Community Server",
     description: server.description || "",
+    inviteUrl: server.invite_url || "",
     members: memberships.filter((membership) => membership.server_id === server.id).length,
     joined: joinedServerIds.includes(server.id),
     channels: channelsByServerId[server.id] ?? [],
@@ -1974,7 +2014,7 @@ function App() {
   const [jobNavigationDirection, setJobNavigationDirection] = useState(null);
   const [helpPanelOpen, setHelpPanelOpen] = useState(false);
   const [supportPanelOpen, setSupportPanelOpen] = useState(false);
-  const [communityServerForm, setCommunityServerForm] = useState({ name: "", description: "" });
+  const [communityServerForm, setCommunityServerForm] = useState({ name: "", description: "", inviteUrl: "" });
   const [communityChannelForm, setCommunityChannelForm] = useState({ name: "", topic: "" });
   const [communityMessageDraft, setCommunityMessageDraft] = useState("");
   const [communityPostDraft, setCommunityPostDraft] = useState("");
@@ -4269,6 +4309,7 @@ function App() {
     if (!name) return;
 
     const description = communityServerForm.description.trim() || "A new SkillBridge community server.";
+    const inviteUrl = normalizeDiscordInviteUrl(communityServerForm.inviteUrl);
 
     if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
       const { data, error } = await supabase
@@ -4276,6 +4317,7 @@ function App() {
         .insert({
           name,
           description,
+          invite_url: inviteUrl || null,
           owner_id: state.auth.accountId,
         })
         .select("id")
@@ -4290,7 +4332,7 @@ function App() {
       }
 
       await supabase.from("community_server_members").upsert({ server_id: data.id, user_id: state.auth.accountId });
-      setCommunityServerForm({ name: "", description: "" });
+      setCommunityServerForm({ name: "", description: "", inviteUrl: "" });
       await refreshCommunityFromSupabase();
       setState((current) => ({
         ...current,
@@ -4311,6 +4353,7 @@ function App() {
           id: serverId,
           name,
           description,
+          inviteUrl,
           members: 1,
           joined: true,
           channels: [],
@@ -4318,7 +4361,7 @@ function App() {
         },
       ],
     }));
-    setCommunityServerForm({ name: "", description: "" });
+    setCommunityServerForm({ name: "", description: "", inviteUrl: "" });
   }
 
   async function joinCommunityServer(serverId) {
@@ -4371,6 +4414,13 @@ function App() {
       activeChannelId: selectedServer?.channels?.[0]?.id || "",
       activeChatChannelId: selectedServer?.channels?.[0]?.id || "__server__",
     }));
+  }
+
+  function openDiscordInvite(inviteUrl) {
+    const safeUrl = normalizeDiscordInviteUrl(inviteUrl);
+    if (!safeUrl) return;
+
+    window.open(safeUrl, "_blank", "noopener,noreferrer");
   }
 
   async function createCommunityChannel(event) {
@@ -6996,16 +7046,30 @@ function App() {
                     const active = activeCommunityServer.id === server.id;
 
                     return (
-                      <button
+                      <div
                         key={server.id}
-                        className={`community-server${active ? " active" : ""}`}
-                        type="button"
-                        onClick={() => (joined ? openCommunityServer(server.id) : joinCommunityServer(server.id))}
+                        className={`community-server-row${active ? " active" : ""}`}
                       >
-                        <Users size={15} />
-                        <span>{server.name}</span>
-                        <em>{joined ? "Open" : "Join"}</em>
-                      </button>
+                        <button
+                          className="community-server"
+                          type="button"
+                          onClick={() => (joined ? openCommunityServer(server.id) : joinCommunityServer(server.id))}
+                        >
+                          <Users size={15} />
+                          <span>{server.name}</span>
+                          <em>{joined ? "Open" : "Join"}</em>
+                        </button>
+                        {server.inviteUrl ? (
+                          <button
+                            className="community-invite-link"
+                            type="button"
+                            aria-label={`Open Discord invite for ${server.name}`}
+                            onClick={() => openDiscordInvite(server.inviteUrl)}
+                          >
+                            <SquareArrowOutUpRight size={14} />
+                          </button>
+                        ) : null}
+                      </div>
                     );
                   })}
                 </div>
@@ -7023,6 +7087,12 @@ function App() {
                     onChange={(event) => setCommunityServerForm((current) => ({ ...current, description: event.target.value }))}
                     placeholder="What is this server for?"
                     rows={3}
+                  />
+                  <input
+                    type="url"
+                    value={communityServerForm.inviteUrl}
+                    onChange={(event) => setCommunityServerForm((current) => ({ ...current, inviteUrl: event.target.value }))}
+                    placeholder="Discord invite URL"
                   />
                   <button className="profile-primary-button small" type="submit">
                     <Plus size={14} />
@@ -7042,6 +7112,12 @@ function App() {
                     <span>{activeCommunityServer.members.toLocaleString()} members</span>
                     <span>{activeCommunityServer.channels.length} channels</span>
                     <span>{activeCommunityServer.posts.length} posts</span>
+                    {activeCommunityServer.inviteUrl ? (
+                      <button className="ghost-action community-open-server" type="button" onClick={() => openDiscordInvite(activeCommunityServer.inviteUrl)}>
+                        <SquareArrowOutUpRight size={14} />
+                        Discord Invite
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -7155,6 +7231,12 @@ function App() {
                 onChange={(event) => setCommunityServerForm((current) => ({ ...current, description: event.target.value }))}
                 placeholder="What is this server for?"
                 rows={3}
+              />
+              <input
+                type="url"
+                value={communityServerForm.inviteUrl}
+                onChange={(event) => setCommunityServerForm((current) => ({ ...current, inviteUrl: event.target.value }))}
+                placeholder="Discord invite URL"
               />
               <button className="profile-primary-button small" type="submit">
                 <Plus size={14} />

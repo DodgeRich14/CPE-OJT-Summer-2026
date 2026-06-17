@@ -880,6 +880,34 @@ select:focus-visible {
   text-align: left;
 }
 
+.community-server-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.community-server-row .community-server {
+  width: 100%;
+}
+
+.community-invite-link {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  min-height: 42px;
+  border: 1px solid rgba(112, 103, 255, 0.24);
+  border-radius: 12px;
+  color: var(--accent-chip);
+  background: rgba(112, 103, 255, 0.08);
+}
+
+.community-invite-link:hover {
+  color: var(--text);
+  border-color: rgba(112, 103, 255, 0.45);
+  background: rgba(112, 103, 255, 0.12);
+}
+
 .community-server span,
 .community-channel span {
   overflow: hidden;
