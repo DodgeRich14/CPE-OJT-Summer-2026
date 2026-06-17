@@ -23,12 +23,14 @@ import {
   MapPin,
   MessageCircle,
   MoonStar,
+  Pencil,
   Plus,
   Search,
   Send,
   ShieldCheck,
   SquareArrowOutUpRight,
   Star,
+  Trash2,
   Upload,
   User,
   Users,
@@ -83,15 +85,23 @@ const helpFaqs = [
   },
   {
     question: "What is inside Development?",
-    answer: "Development contains Training, Mentorship, and Certifications. Training shows course progress and module quizzes, Mentorship lists mentor-led courses, and Certifications links practice resources and official portals.",
+    answer: "Development contains Training, Mentorship, and Certifications. Training shows course progress and module quizzes, Mentorship lists mentor-led courses, and Certifications links practice resources and official portals. Use the search bars in Mentorship and Certifications to quickly filter by title, mentor, provider, track, or skill.",
   },
   {
     question: "How does Community work?",
-    answer: "Open Community from the sidebar after subscribing. Join a server to view its feed, post updates, react with hearts, comment on posts, and open that server to browse channels.",
+    answer: "Open Community from the sidebar after subscribing. Join a server to view its feed, post updates, react with hearts, comment on posts, and open that server to browse channels. Use the server search to filter available servers by name or description.",
   },
   {
     question: "How do I chat in a Community channel?",
-    answer: "In Community, click a joined server to open its server popup. Channels appear on the left, and the selected channel chat appears on the right. You can also create new channels inside the server popup.",
+    answer: "In Community, click a joined server to open its server popup. Channels appear on the left, and the selected channel chat appears on the right. Use the channel search to filter channels, or create a new channel inside the server popup.",
+  },
+  {
+    question: "How do Community edit and delete buttons work?",
+    answer: "Owners and authors see pencil and trash buttons on the items they created. Server owners can edit server descriptions, channel creators can edit channel descriptions, and authors can edit or delete their own posts, comments, and channel messages.",
+  },
+  {
+    question: "Why do I not see Edit or Delete on some Community items?",
+    answer: "Edit and Delete only appear for the account that created the item. If a Community database migration is missing, Supabase may also reject the save; apply the latest Community edit and message owner-action migrations, then reload the app.",
   },
   {
     question: "Can other SkillBridge users see my Community posts?",
@@ -220,6 +230,17 @@ const defaultCommunityServers = [
     ],
   },
 ];
+
+function DiscordLogo({ size = 14 }) {
+  return (
+    <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" focusable="false">
+      <path
+        fill="currentColor"
+        d="M20.32 4.37A19.8 19.8 0 0 0 15.36 2.8a13.8 13.8 0 0 0-.64 1.3 18.3 18.3 0 0 0-5.44 0 13.5 13.5 0 0 0-.65-1.3A19.7 19.7 0 0 0 3.68 4.38C.55 9.05-.31 13.6.11 18.08a19.9 19.9 0 0 0 6.08 3.07c.49-.67.93-1.38 1.3-2.12a12.9 12.9 0 0 1-2.05-.98l.5-.39a14.2 14.2 0 0 0 12.12 0l.5.39c-.65.39-1.33.72-2.05.98.38.74.81 1.45 1.3 2.12a19.9 19.9 0 0 0 6.08-3.07c.5-5.19-.84-9.7-3.57-13.71ZM8.02 15.33c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.96-2.42 2.16-2.42 1.21 0 2.18 1.1 2.16 2.42 0 1.34-.96 2.42-2.16 2.42Zm7.96 0c-1.18 0-2.16-1.08-2.16-2.42 0-1.33.95-2.42 2.16-2.42s2.18 1.1 2.16 2.42c0 1.34-.95 2.42-2.16 2.42Z"
+      />
+    </svg>
+  );
+}
 
 const adminSidebarItems = [
   { id: "users", label: "User Management", icon: Users },
@@ -1846,6 +1867,10 @@ function formatCommunityTime(value) {
   });
 }
 
+function getCommunityExpiryDate() {
+  return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+}
+
 function normalizeCommunitySlug(value, fallback = "general") {
   const slug = String(value || "")
     .trim()
@@ -1881,6 +1906,14 @@ function normalizeDiscordInviteUrl(value) {
 function getCommunityErrorMessage(error, fallback) {
   const message = error?.message || "";
 
+  if (message.includes("invite_url")) {
+    return "Discord invite links need the latest Community migration. Server creation can continue without the invite link until that column is applied.";
+  }
+
+  if (message.includes("expires_at")) {
+    return "Community post expiration needs the latest migration. Apply the expiring posts migration, then reload the app.";
+  }
+
   if (message.includes("schema cache") || message.includes("community_")) {
     return "Community database tables are not available yet. Apply the latest Supabase migration, then reload the app.";
   }
@@ -1909,10 +1942,12 @@ function buildCommunityFromRecords({
     grouped[comment.post_id] = grouped[comment.post_id] ?? [];
     grouped[comment.post_id].push({
       id: comment.id,
+      authorId: comment.author_id || "",
       author: comment.author_name || "SkillBridge User",
       role: comment.author_role || "Applicant",
       text: comment.body || "",
       time: formatCommunityTime(comment.created_at),
+      expiresAt: comment.expires_at || "",
     });
     return grouped;
   }, {});
@@ -1920,6 +1955,7 @@ function buildCommunityFromRecords({
     grouped[message.channel_id] = grouped[message.channel_id] ?? [];
     grouped[message.channel_id].push({
       id: message.id,
+      authorId: message.author_id || "",
       author: message.author_name || "SkillBridge User",
       role: message.author_role || "Applicant",
       text: message.body || "",
@@ -1931,6 +1967,7 @@ function buildCommunityFromRecords({
     grouped[post.server_id] = grouped[post.server_id] ?? [];
     grouped[post.server_id].push({
       id: post.id,
+      authorId: post.author_id || "",
       author: post.author_name || "SkillBridge User",
       role: post.author_role || "Applicant",
       text: post.body || "",
@@ -1938,6 +1975,7 @@ function buildCommunityFromRecords({
       likedByMe: likedPostIds.has(post.id),
       comments: commentsByPostId[post.id] ?? [],
       time: formatCommunityTime(post.created_at),
+      expiresAt: post.expires_at || "",
     });
     return grouped;
   }, {});
@@ -1945,6 +1983,7 @@ function buildCommunityFromRecords({
     grouped[channel.server_id] = grouped[channel.server_id] ?? [];
     grouped[channel.server_id].push({
       id: channel.id,
+      createdBy: channel.created_by || "",
       name: channel.name || "general",
       topic: channel.topic || "",
       messages: messagesByChannelId[channel.id] ?? [],
@@ -1953,6 +1992,7 @@ function buildCommunityFromRecords({
   }, {});
   const mappedServers = servers.map((server) => ({
     id: server.id,
+    ownerId: server.owner_id || "",
     name: server.name || "Community Server",
     description: server.description || "",
     inviteUrl: server.invite_url || "",
@@ -2019,6 +2059,14 @@ function App() {
   const [communityMessageDraft, setCommunityMessageDraft] = useState("");
   const [communityPostDraft, setCommunityPostDraft] = useState("");
   const [communityCommentDrafts, setCommunityCommentDrafts] = useState({});
+  const [communityEditDialog, setCommunityEditDialog] = useState(null);
+  const [communityEditValue, setCommunityEditValue] = useState("");
+  const [communityEditFeedback, setCommunityEditFeedback] = useState("");
+  const [communityEditSaving, setCommunityEditSaving] = useState(false);
+  const [mentorshipSearchQuery, setMentorshipSearchQuery] = useState("");
+  const [certificationSearchQuery, setCertificationSearchQuery] = useState("");
+  const [communityServerSearchQuery, setCommunityServerSearchQuery] = useState("");
+  const [communityChannelSearchQuery, setCommunityChannelSearchQuery] = useState("");
   const [supportMessageDraft, setSupportMessageDraft] = useState("");
   const isAdmin = state.auth.isAuthenticated && state.auth.accountRole === "Admin";
   const isStudent = state.auth.isAuthenticated && state.auth.accountRole === "Student";
@@ -2283,9 +2331,9 @@ function App() {
       supabase.from("community_server_members").select("*"),
       supabase.from("community_channels").select("*").order("created_at", { ascending: true }),
       supabase.from("community_channel_messages").select("*").order("created_at", { ascending: true }),
-      supabase.from("community_posts").select("*").order("created_at", { ascending: false }),
+      supabase.from("community_posts").select("*").or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`).order("created_at", { ascending: false }),
       supabase.from("community_post_reactions").select("*"),
-      supabase.from("community_post_comments").select("*").order("created_at", { ascending: true }),
+      supabase.from("community_post_comments").select("*").or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`).order("created_at", { ascending: true }),
     ]);
 
     const error =
@@ -2786,6 +2834,45 @@ function App() {
   const activeChatChannel =
     communityChannels.find((channel) => channel.id === state.community?.activeChatChannelId) ??
     activeCommunityChannel;
+  const normalizedMentorshipSearch = mentorshipSearchQuery.trim().toLowerCase();
+  const filteredMentorshipCourses = normalizedMentorshipSearch
+    ? mentorshipCourses.filter((course) =>
+        [
+          course.mentor,
+          course.role,
+          course.title,
+          course.description,
+          course.duration,
+          course.schedule,
+          course.start,
+          course.price,
+          ...(course.badges ?? []),
+          ...(course.tags ?? []),
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedMentorshipSearch),
+      )
+    : mentorshipCourses;
+  const normalizedCertificationSearch = certificationSearchQuery.trim().toLowerCase();
+  const normalizedCommunityServerSearch = communityServerSearchQuery.trim().toLowerCase();
+  const filteredCommunityServers = normalizedCommunityServerSearch
+    ? communityServers.filter((server) =>
+        [server.name, server.description, server.inviteUrl]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedCommunityServerSearch),
+      )
+    : communityServers;
+  const normalizedCommunityChannelSearch = communityChannelSearchQuery.trim().toLowerCase();
+  const filteredCommunityChannels = normalizedCommunityChannelSearch
+    ? communityChannels.filter((channel) =>
+        [channel.name, channel.topic]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedCommunityChannelSearch),
+      )
+    : communityChannels;
   const currentCommunityAuthor = state.auth.isAuthenticated
     ? state.profile.fullName || state.auth.accountName || "SkillBridge User"
     : "Guest User";
@@ -3249,9 +3336,25 @@ function App() {
     state.auth.accountId,
     state.auth.isAuthenticated,
   ]);
-  const filteredCertifications = certifications.filter(
-    (item) => state.certificationFilter === "All" || item.track === state.certificationFilter,
-  );
+  const filteredCertifications = certifications.filter((item) => {
+    const matchesCategory = state.certificationFilter === "All" || item.track === state.certificationFilter;
+    const matchesSearch =
+      !normalizedCertificationSearch ||
+      [
+        item.title,
+        item.subtitle,
+        item.provider,
+        item.level,
+        item.track,
+        item.description,
+        ...(item.tags ?? []),
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedCertificationSearch);
+
+    return matchesCategory && matchesSearch;
+  });
   const selectedJob = listings.find((listing) => listing.id === state.selectedJobId) ?? null;
   const selectedCategoryRankedListings = selectedJob
     ? rankedListings.filter((listing) => listing.category === selectedJob.category)
@@ -4303,6 +4406,131 @@ function App() {
     }));
   }
 
+  function setCommunityError(message) {
+    setState((current) => ({
+      ...current,
+      community: { ...(current.community ?? defaultState.community), error: message },
+    }));
+  }
+
+  function openCommunityEditDialog(config) {
+    setCommunityEditDialog(config);
+    setCommunityEditValue(config.value || "");
+    setCommunityEditFeedback("");
+  }
+
+  function closeCommunityEditDialog() {
+    if (communityEditSaving) return;
+    setCommunityEditDialog(null);
+    setCommunityEditValue("");
+    setCommunityEditFeedback("");
+  }
+
+  async function saveCommunityEdit(event) {
+    event.preventDefault();
+    if (!communityEditDialog) return;
+
+    const body = communityEditValue.trim();
+    if (!body) {
+      setCommunityEditFeedback("Add some text before saving.");
+      return;
+    }
+
+    const { type, id, serverId, channelId, postId, commentId, messageId } = communityEditDialog;
+    setCommunityEditSaving(true);
+    setCommunityEditFeedback("");
+
+    if (hasSupabaseConfig && supabase && hasActiveSubscription) {
+      const updateByType = {
+        server: () => supabase.from("community_servers").update({ description: body }).eq("id", id),
+        channel: () => supabase.from("community_channels").update({ topic: body }).eq("id", id),
+        post: () => supabase.from("community_posts").update({ body }).eq("id", id),
+        comment: () => supabase.from("community_post_comments").update({ body }).eq("id", commentId || id),
+        message: () => supabase.from("community_channel_messages").update({ body }).eq("id", messageId || id),
+      };
+      const updateRequest = updateByType[type];
+      const { error } = updateRequest ? await updateRequest() : { error: new Error("Unsupported edit type") };
+
+      if (error) {
+        const message = getCommunityErrorMessage(error, "Edit failed. Make sure the latest Community edit migrations are applied.");
+        setCommunityEditFeedback(message);
+        setCommunityError(message);
+        setCommunityEditSaving(false);
+        return;
+      }
+
+      await refreshCommunityFromSupabase();
+      setCommunityEditSaving(false);
+      setCommunityEditDialog(null);
+      setCommunityEditValue("");
+      return;
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      servers: (community.servers ?? []).map((server) => {
+        if (type === "server") {
+          return server.id === id ? { ...server, description: body } : server;
+        }
+
+        if (server.id !== serverId && server.id !== activeCommunityServer?.id) return server;
+
+        if (type === "channel") {
+          return {
+            ...server,
+            channels: (server.channels ?? []).map((channel) =>
+              channel.id === id ? { ...channel, topic: body } : channel,
+            ),
+          };
+        }
+
+        if (type === "message") {
+          return {
+            ...server,
+            channels: (server.channels ?? []).map((channel) =>
+              channel.id === channelId
+                ? {
+                    ...channel,
+                    messages: (channel.messages ?? []).map((message) =>
+                      message.id === (messageId || id) ? { ...message, text: body } : message,
+                    ),
+                  }
+                : channel,
+            ),
+          };
+        }
+
+        if (type === "post") {
+          return {
+            ...server,
+            posts: (server.posts ?? []).map((post) => (post.id === id ? { ...post, text: body } : post)),
+          };
+        }
+
+        if (type === "comment") {
+          return {
+            ...server,
+            posts: (server.posts ?? []).map((post) =>
+              post.id === postId
+                ? {
+                    ...post,
+                    comments: (post.comments ?? []).map((comment) =>
+                      comment.id === (commentId || id) ? { ...comment, text: body } : comment,
+                    ),
+                  }
+                : post,
+            ),
+          };
+        }
+
+        return server;
+      }),
+    }));
+    setCommunityEditSaving(false);
+    setCommunityEditDialog(null);
+    setCommunityEditValue("");
+  }
+
   async function createCommunityServer(event) {
     event.preventDefault();
     const name = communityServerForm.name.trim();
@@ -4312,16 +4540,30 @@ function App() {
     const inviteUrl = normalizeDiscordInviteUrl(communityServerForm.inviteUrl);
 
     if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
-      const { data, error } = await supabase
+      const serverPayload = {
+        name,
+        description,
+        owner_id: state.auth.accountId,
+      };
+      const payloadWithInvite = {
+        ...serverPayload,
+        invite_url: inviteUrl || null,
+      };
+      let { data, error } = await supabase
         .from("community_servers")
-        .insert({
-          name,
-          description,
-          invite_url: inviteUrl || null,
-          owner_id: state.auth.accountId,
-        })
+        .insert(payloadWithInvite)
         .select("id")
         .single();
+
+      if (error?.message?.includes("invite_url")) {
+        const retryResult = await supabase
+          .from("community_servers")
+          .insert(serverPayload)
+          .select("id")
+          .single();
+        data = retryResult.data;
+        error = retryResult.error;
+      }
 
       if (error) {
         setState((current) => ({
@@ -4351,6 +4593,7 @@ function App() {
         ...(community.servers ?? []),
         {
           id: serverId,
+          ownerId: state.auth.accountId || "local-user",
           name,
           description,
           inviteUrl,
@@ -4423,6 +4666,25 @@ function App() {
     window.open(safeUrl, "_blank", "noopener,noreferrer");
   }
 
+  function handleCommunityServerClick(server, joined) {
+    if (server.inviteUrl) {
+      if (joined) {
+        openCommunityServer(server.id);
+      } else {
+        joinCommunityServer(server.id).catch(() => {});
+      }
+      openDiscordInvite(server.inviteUrl);
+      return;
+    }
+
+    if (joined) {
+      openCommunityServer(server.id);
+      return;
+    }
+
+    joinCommunityServer(server.id);
+  }
+
   async function createCommunityChannel(event) {
     event.preventDefault();
     const cleanName = normalizeCommunitySlug(communityChannelForm.name, "");
@@ -4460,6 +4722,7 @@ function App() {
     const channelId = `${cleanName}-${Date.now()}`;
     const channel = {
       id: channelId,
+      createdBy: state.auth.accountId || "local-user",
       name: cleanName,
       topic: communityChannelForm.topic.trim() || "A new SkillBridge community channel.",
       messages: [],
@@ -4525,7 +4788,7 @@ function App() {
                       ...channel,
                       messages: [
                         ...(channel.messages ?? []),
-                        { id: Date.now(), author: currentCommunityAuthor, role: currentCommunityRole, text, time: "Now" },
+                        { id: Date.now(), authorId: state.auth.accountId || "local-user", author: currentCommunityAuthor, role: currentCommunityRole, text, time: "Now" },
                       ],
                     }
                   : channel,
@@ -4535,6 +4798,60 @@ function App() {
       ),
     }));
     setCommunityMessageDraft("");
+  }
+
+  async function deleteCommunityMessage(messageId) {
+    const message = activeChatChannel?.messages.find((item) => item.id === messageId);
+    if (!canDeleteCommunityItem(message?.authorId) || !window.confirm("Delete this message?")) return;
+
+    if (hasSupabaseConfig && supabase && hasActiveSubscription) {
+      const { error } = await supabase.from("community_channel_messages").delete().eq("id", messageId);
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Message deletion failed") },
+        }));
+        return;
+      }
+      await refreshCommunityFromSupabase();
+      return;
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      servers: (community.servers ?? []).map((server) =>
+        server.id === activeCommunityServer?.id
+          ? {
+              ...server,
+              channels: (server.channels ?? []).map((channel) =>
+                channel.id === activeChatChannel?.id
+                  ? { ...channel, messages: (channel.messages ?? []).filter((item) => item.id !== messageId) }
+                  : channel,
+              ),
+            }
+          : server,
+      ),
+    }));
+  }
+
+  async function editCommunityMessage(messageId) {
+    const message = activeChatChannel?.messages.find((item) => item.id === messageId);
+    if (!canDeleteCommunityItem(message?.authorId)) {
+      setCommunityError("Only the message author can edit this message.");
+      return;
+    }
+
+    openCommunityEditDialog({
+      type: "message",
+      id: messageId,
+      messageId,
+      serverId: activeCommunityServer?.id,
+      channelId: activeChatChannel?.id,
+      title: "Edit message",
+      label: "Message",
+      value: message.text || "",
+      rows: 4,
+    });
   }
 
   async function createCommunityPost(event) {
@@ -4549,6 +4866,7 @@ function App() {
         author_name: currentCommunityAuthor,
         author_role: currentCommunityRole,
         body: text,
+        expires_at: getCommunityExpiryDate(),
       });
 
       if (error) {
@@ -4573,6 +4891,7 @@ function App() {
               posts: [
                 {
                   id: Date.now(),
+                  authorId: state.auth.accountId || "local-user",
                   author: currentCommunityAuthor,
                   role: currentCommunityRole,
                   text,
@@ -4580,6 +4899,7 @@ function App() {
                   likedByMe: false,
                   comments: [],
                   time: "Now",
+                  expiresAt: getCommunityExpiryDate(),
                 },
                 ...(server.posts ?? []),
               ],
@@ -4671,7 +4991,7 @@ function App() {
                       ...post,
                       comments: [
                         ...(post.comments ?? []),
-                        { id: Date.now(), author: currentCommunityAuthor, role: currentCommunityRole, text, time: "Now" },
+                        { id: Date.now(), authorId: state.auth.accountId || "local-user", author: currentCommunityAuthor, role: currentCommunityRole, text, time: "Now", expiresAt: getCommunityExpiryDate() },
                       ],
                     }
                   : post,
@@ -4681,6 +5001,213 @@ function App() {
       ),
     }));
     setCommunityCommentDrafts((current) => ({ ...current, [postId]: "" }));
+  }
+
+  function canDeleteCommunityItem(ownerId) {
+    return Boolean(ownerId && state.auth.accountId && ownerId === state.auth.accountId);
+  }
+
+  async function deleteCommunityServer(serverId) {
+    const server = communityServers.find((item) => item.id === serverId);
+    if (!canDeleteCommunityItem(server?.ownerId) || !window.confirm(`Delete "${server.name}" and all of its channels, posts, and comments?`)) return;
+
+    if (hasSupabaseConfig && supabase && hasActiveSubscription) {
+      const { error } = await supabase.from("community_servers").delete().eq("id", serverId);
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Server deletion failed") },
+        }));
+        return;
+      }
+      await refreshCommunityFromSupabase();
+      return;
+    }
+
+    updateCommunity((community) => {
+      const servers = (community.servers ?? []).filter((item) => item.id !== serverId);
+      return {
+        ...community,
+        servers,
+        joinedServerIds: (community.joinedServerIds ?? []).filter((id) => id !== serverId),
+        activeServerId: community.activeServerId === serverId ? servers[0]?.id || "" : community.activeServerId,
+        activeChannelId: community.activeServerId === serverId ? servers[0]?.channels?.[0]?.id || "" : community.activeChannelId,
+        activeChatChannelId: community.activeServerId === serverId ? "" : community.activeChatChannelId,
+      };
+    });
+  }
+
+  async function editCommunityServerDescription(serverId) {
+    const server = communityServers.find((item) => item.id === serverId);
+    if (!canDeleteCommunityItem(server?.ownerId)) {
+      setCommunityError("Only the server owner can edit this server.");
+      return;
+    }
+
+    openCommunityEditDialog({
+      type: "server",
+      id: serverId,
+      serverId,
+      title: "Edit server description",
+      label: "Server description",
+      value: server.description || "",
+      rows: 4,
+    });
+  }
+
+  async function deleteCommunityChannel(channelId) {
+    const channel = communityChannels.find((item) => item.id === channelId);
+    if (!canDeleteCommunityItem(channel?.createdBy) || !window.confirm(`Delete #${channel.name} and its messages?`)) return;
+
+    if (hasSupabaseConfig && supabase && hasActiveSubscription) {
+      const { error } = await supabase.from("community_channels").delete().eq("id", channelId);
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Channel deletion failed") },
+        }));
+        return;
+      }
+      await refreshCommunityFromSupabase();
+      setState((current) => ({
+        ...current,
+        community: {
+          ...(current.community ?? defaultState.community),
+          activeChatChannelId: current.community?.activeChatChannelId === channelId ? "" : current.community?.activeChatChannelId || "",
+        },
+      }));
+      return;
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      activeChannelId: community.activeChannelId === channelId ? "" : community.activeChannelId,
+      activeChatChannelId: community.activeChatChannelId === channelId ? "" : community.activeChatChannelId,
+      servers: (community.servers ?? []).map((server) =>
+        server.id === activeCommunityServer?.id
+          ? { ...server, channels: (server.channels ?? []).filter((item) => item.id !== channelId) }
+          : server,
+      ),
+    }));
+  }
+
+  async function editCommunityChannelDescription(channelId) {
+    const channel = communityChannels.find((item) => item.id === channelId);
+    if (!canDeleteCommunityItem(channel?.createdBy)) {
+      setCommunityError("Only the channel creator can edit this channel.");
+      return;
+    }
+
+    openCommunityEditDialog({
+      type: "channel",
+      id: channelId,
+      serverId: activeCommunityServer?.id,
+      title: "Edit channel description",
+      label: "Channel description",
+      value: channel.topic || "",
+      rows: 4,
+    });
+  }
+
+  async function deleteCommunityPost(postId) {
+    const post = activeCommunityServer?.posts.find((item) => item.id === postId);
+    if (!canDeleteCommunityItem(post?.authorId) || !window.confirm("Delete this post and all of its comments?")) return;
+
+    if (hasSupabaseConfig && supabase && hasActiveSubscription) {
+      const { error } = await supabase.from("community_posts").delete().eq("id", postId);
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Post deletion failed") },
+        }));
+        return;
+      }
+      await refreshCommunityFromSupabase();
+      return;
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      servers: (community.servers ?? []).map((server) =>
+        server.id === activeCommunityServer?.id
+          ? { ...server, posts: (server.posts ?? []).filter((item) => item.id !== postId) }
+          : server,
+      ),
+    }));
+  }
+
+  async function editCommunityPost(postId) {
+    const post = activeCommunityServer?.posts.find((item) => item.id === postId);
+    if (!canDeleteCommunityItem(post?.authorId)) {
+      setCommunityError("Only the post author can edit this post.");
+      return;
+    }
+
+    openCommunityEditDialog({
+      type: "post",
+      id: postId,
+      serverId: activeCommunityServer?.id,
+      title: "Edit post",
+      label: "Post",
+      value: post.text || "",
+      rows: 5,
+    });
+  }
+
+  async function deleteCommunityComment(postId, commentId) {
+    const post = activeCommunityServer?.posts.find((item) => item.id === postId);
+    const comment = post?.comments.find((item) => item.id === commentId);
+    if (!canDeleteCommunityItem(comment?.authorId) || !window.confirm("Delete this comment?")) return;
+
+    if (hasSupabaseConfig && supabase && hasActiveSubscription) {
+      const { error } = await supabase.from("community_post_comments").delete().eq("id", commentId);
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Comment deletion failed") },
+        }));
+        return;
+      }
+      await refreshCommunityFromSupabase();
+      return;
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      servers: (community.servers ?? []).map((server) =>
+        server.id === activeCommunityServer?.id
+          ? {
+              ...server,
+              posts: (server.posts ?? []).map((item) =>
+                item.id === postId
+                  ? { ...item, comments: (item.comments ?? []).filter((commentItem) => commentItem.id !== commentId) }
+                  : item,
+              ),
+            }
+          : server,
+      ),
+    }));
+  }
+
+  async function editCommunityComment(postId, commentId) {
+    const post = activeCommunityServer?.posts.find((item) => item.id === postId);
+    const comment = post?.comments.find((item) => item.id === commentId);
+    if (!canDeleteCommunityItem(comment?.authorId)) {
+      setCommunityError("Only the comment author can edit this comment.");
+      return;
+    }
+
+    openCommunityEditDialog({
+      type: "comment",
+      id: commentId,
+      serverId: activeCommunityServer?.id,
+      postId,
+      commentId,
+      title: "Edit comment",
+      label: "Comment",
+      value: comment.text || "",
+      rows: 4,
+    });
   }
 
   function sendSupportMessage(event) {
@@ -6863,11 +7390,22 @@ function App() {
 
             <div className="roadmap-meta">
               <span className="status-badge in-progress">Mentor-led | Live sessions</span>
-              <span>{mentorshipCourses.length} courses available</span>
+              <span>{filteredMentorshipCourses.length} of {mentorshipCourses.length} courses available</span>
             </div>
 
+            <label className="listing-search compact-search" htmlFor="mentorship-search">
+              <Search size={17} />
+              <input
+                id="mentorship-search"
+                value={mentorshipSearchQuery}
+                onChange={(event) => setMentorshipSearchQuery(event.target.value)}
+                placeholder="Search mentorships by mentor, role, course, skill..."
+              />
+            </label>
+
             <div key={state.trainingTab} className="progress-card-list content-appear">
-              {mentorshipCourses.map((course) => {
+              {filteredMentorshipCourses.length > 0 ? (
+                filteredMentorshipCourses.map((course) => {
                 const applied = state.mentorshipApplied.includes(course.id);
 
                 return (
@@ -6933,7 +7471,10 @@ function App() {
                     </div>
                   </article>
                 );
-              })}
+              })
+              ) : (
+                <div className="profile-empty-card">No mentorship courses match your search.</div>
+              )}
             </div>
           </section>
         )}
@@ -6949,8 +7490,18 @@ function App() {
 
             <div className="roadmap-meta">
               <span className="status-badge ready">Official Partners</span>
-              <span>Links to practice exams and official exam portals</span>
+              <span>{filteredCertifications.length} certification{filteredCertifications.length === 1 ? "" : "s"} shown</span>
             </div>
+
+            <label className="listing-search compact-search" htmlFor="certification-search">
+              <Search size={17} />
+              <input
+                id="certification-search"
+                value={certificationSearchQuery}
+                onChange={(event) => setCertificationSearchQuery(event.target.value)}
+                placeholder="Search certifications by title, provider, track, skill..."
+              />
+            </label>
 
             <div
               className="cert-filter-row"
@@ -6968,8 +7519,9 @@ function App() {
               ))}
             </div>
 
-            <div key={state.certificationFilter} className="progress-card-list certification-list-appear">
-              {filteredCertifications.map((cert, index) => {
+            <div key={`${state.certificationFilter}-${certificationSearchQuery}`} className="progress-card-list certification-list-appear">
+              {filteredCertifications.length > 0 ? (
+                filteredCertifications.map((cert, index) => {
                 const practiced = state.certificationPractice.includes(cert.id);
                 const portalVisited = state.certificationPortalVisits.includes(cert.id);
 
@@ -7013,7 +7565,10 @@ function App() {
                     </div>
                   </article>
                 );
-              })}
+              })
+              ) : (
+                <div className="profile-empty-card">No certifications match your filters.</div>
+              )}
             </div>
           </section>
         )}
@@ -7037,11 +7592,22 @@ function App() {
               <aside className="community-sidebar">
                 <div className="community-sidebar-head">
                   <span className="section-kicker">Servers</span>
-                  <strong>{communityServers.length} available</strong>
+                  <strong>{filteredCommunityServers.length} of {communityServers.length} available</strong>
                 </div>
 
+                <label className="listing-search compact-search community-search" htmlFor="community-server-search">
+                  <Search size={16} />
+                  <input
+                    id="community-server-search"
+                    value={communityServerSearchQuery}
+                    onChange={(event) => setCommunityServerSearchQuery(event.target.value)}
+                    placeholder="Search servers..."
+                  />
+                </label>
+
                 <div className="community-server-list">
-                  {communityServers.map((server) => {
+                  {filteredCommunityServers.length > 0 ? (
+                    filteredCommunityServers.map((server) => {
                     const joined = joinedCommunityServerIds.includes(server.id) || server.joined;
                     const active = activeCommunityServer.id === server.id;
 
@@ -7053,25 +7619,44 @@ function App() {
                         <button
                           className="community-server"
                           type="button"
-                          onClick={() => (joined ? openCommunityServer(server.id) : joinCommunityServer(server.id))}
+                          onClick={() => handleCommunityServerClick(server, joined)}
                         >
                           <Users size={15} />
-                          <span>{server.name}</span>
-                          <em>{joined ? "Open" : "Join"}</em>
+                          <span className="community-server-name">
+                            {server.name}
+                            {server.inviteUrl ? (
+                              <span className="community-discord-indicator" aria-label="Has Discord invite">
+                                <DiscordLogo size={12} />
+                              </span>
+                            ) : null}
+                          </span>
                         </button>
-                        {server.inviteUrl ? (
-                          <button
-                            className="community-invite-link"
-                            type="button"
-                            aria-label={`Open Discord invite for ${server.name}`}
-                            onClick={() => openDiscordInvite(server.inviteUrl)}
-                          >
-                            <SquareArrowOutUpRight size={14} />
-                          </button>
+                        {canDeleteCommunityItem(server.ownerId) ? (
+                          <div className="community-owner-actions">
+                            <button
+                              className="community-edit-button"
+                              type="button"
+                              aria-label={`Edit ${server.name}`}
+                              onClick={() => editCommunityServerDescription(server.id)}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              className="community-delete-button"
+                              type="button"
+                              aria-label={`Delete ${server.name}`}
+                              onClick={() => deleteCommunityServer(server.id)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
                         ) : null}
                       </div>
                     );
-                  })}
+                  })
+                  ) : (
+                    <div className="profile-empty-card">No servers match your search.</div>
+                  )}
                 </div>
 
                 <form className="community-create-card" onSubmit={createCommunityServer}>
@@ -7106,17 +7691,30 @@ function App() {
                   <div>
                     <span className="section-kicker">{activeCommunityServer.joined ? "Joined Server" : "Available Server"}</span>
                     <h2>{activeCommunityServer.name}</h2>
-                    <p>{activeCommunityServer.description}</p>
+                    <p className="community-server-description">{activeCommunityServer.description}</p>
                   </div>
                   <div className="community-channel-stats">
-                    <span>{activeCommunityServer.members.toLocaleString()} members</span>
-                    <span>{activeCommunityServer.channels.length} channels</span>
-                    <span>{activeCommunityServer.posts.length} posts</span>
-                    {activeCommunityServer.inviteUrl ? (
-                      <button className="ghost-action community-open-server" type="button" onClick={() => openDiscordInvite(activeCommunityServer.inviteUrl)}>
-                        <SquareArrowOutUpRight size={14} />
-                        Discord Invite
-                      </button>
+                    <span aria-label={`${activeCommunityServer.members.toLocaleString()} members`}>
+                      <Users size={14} />
+                      {activeCommunityServer.members.toLocaleString()}
+                    </span>
+                    <span aria-label={`${activeCommunityServer.channels.length} channels`}>
+                      <Hash size={14} />
+                      {activeCommunityServer.channels.length}
+                    </span>
+                    <span aria-label={`${activeCommunityServer.posts.length} posts`}>
+                      <AtSign size={14} />
+                      {activeCommunityServer.posts.length}
+                    </span>
+                    {canDeleteCommunityItem(activeCommunityServer.ownerId) ? (
+                      <div className="community-owner-actions">
+                        <button className="community-edit-button" type="button" aria-label="Edit server description" onClick={() => editCommunityServerDescription(activeCommunityServer.id)}>
+                          <Pencil size={13} />
+                        </button>
+                        <button className="community-delete-button" type="button" aria-label="Delete server" onClick={() => deleteCommunityServer(activeCommunityServer.id)}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 </div>
@@ -7160,7 +7758,18 @@ function App() {
                               <div className="community-message-meta">
                                 <strong>{post.author}</strong>
                                 <span>{post.role}</span>
-                                <span>{post.time}</span>
+                                <span>Posted {post.time}</span>
+                                <span>{post.expiresAt ? `Expires ${formatCommunityTime(post.expiresAt)}` : "Expires in 7 days"}</span>
+                                {canDeleteCommunityItem(post.authorId) ? (
+                                  <span className="community-owner-actions inline">
+                                    <button className="community-edit-button inline" type="button" aria-label="Edit post" onClick={() => editCommunityPost(post.id)}>
+                                      <Pencil size={11} />
+                                    </button>
+                                    <button className="community-delete-button inline" type="button" aria-label="Delete post" onClick={() => deleteCommunityPost(post.id)}>
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </span>
+                                ) : null}
                               </div>
                               <p>{post.text}</p>
                               <div className="community-post-actions">
@@ -7178,8 +7787,22 @@ function App() {
                               <div className="community-comment-list">
                                 {post.comments.map((comment) => (
                                   <div key={comment.id} className="community-comment">
-                                    <strong>{comment.author}</strong>
-                                    <span>{comment.time}</span>
+                                    <div className="community-comment-meta">
+                                      <strong>{comment.author}</strong>
+                                      <span>{comment.role}</span>
+                                      <span>Posted {comment.time}</span>
+                                      <span>{comment.expiresAt ? `Expires ${formatCommunityTime(comment.expiresAt)}` : "Expires in 7 days"}</span>
+                                    </div>
+                                    {canDeleteCommunityItem(comment.authorId) ? (
+                                      <span className="community-owner-actions inline">
+                                        <button className="community-edit-button inline" type="button" aria-label="Edit comment" onClick={() => editCommunityComment(post.id, comment.id)}>
+                                          <Pencil size={11} />
+                                        </button>
+                                        <button className="community-delete-button inline" type="button" aria-label="Delete comment" onClick={() => deleteCommunityComment(post.id, comment.id)}>
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </span>
+                                    ) : null}
                                     <p>{comment.text}</p>
                                   </div>
                                 ))}
@@ -7350,6 +7973,45 @@ function App() {
         </div>
       )}
 
+      {communityEditDialog && (
+        <div className="profile-overlay job-modal-overlay help-overlay community-edit-overlay" onClick={closeCommunityEditDialog}>
+          <aside className="profile-panel community-edit-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="profile-panel-header help-panel-header">
+              <div>
+                <span className="section-kicker">Community Edit</span>
+                <h2>{communityEditDialog.title}</h2>
+              </div>
+              <button className="profile-close" type="button" onClick={closeCommunityEditDialog}>
+                <X size={16} />
+              </button>
+            </div>
+
+            <form className="profile-panel-body community-edit-form" onSubmit={saveCommunityEdit}>
+              <label>
+                <span>{communityEditDialog.label}</span>
+                <textarea
+                  value={communityEditValue}
+                  onChange={(event) => setCommunityEditValue(event.target.value)}
+                  rows={communityEditDialog.rows || 4}
+                  autoFocus
+                />
+              </label>
+
+              {communityEditFeedback ? <p className="form-feedback">{communityEditFeedback}</p> : null}
+
+              <div className="community-edit-actions">
+                <button className="ghost-action" type="button" onClick={closeCommunityEditDialog} disabled={communityEditSaving}>
+                  Cancel
+                </button>
+                <button className="roadmap-cta" type="submit" disabled={communityEditSaving}>
+                  {communityEditSaving ? "Saving..." : "Save Edit"}
+                </button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      )}
+
       {state.community?.activeChatChannelId && activeCommunityServer && (
         <div
           className="profile-overlay job-modal-overlay help-overlay"
@@ -7387,11 +8049,21 @@ function App() {
                   <strong>Channels</strong>
                 </div>
 
+                <label className="listing-search compact-search community-search" htmlFor="community-channel-search">
+                  <Search size={16} />
+                  <input
+                    id="community-channel-search"
+                    value={communityChannelSearchQuery}
+                    onChange={(event) => setCommunityChannelSearchQuery(event.target.value)}
+                    placeholder="Search channels..."
+                  />
+                </label>
+
                 <div className="community-channel-list">
-                  {communityChannels.length > 0 ? (
-                    communityChannels.map((channel) => (
-                      <button
-                        key={channel.id}
+                  {filteredCommunityChannels.length > 0 ? (
+                    filteredCommunityChannels.map((channel) => (
+                      <div key={channel.id} className="community-channel-row">
+                        <button
                         className={`community-channel${activeChatChannel?.id === channel.id ? " active" : ""}`}
                         type="button"
                         onClick={() => openCommunityChannel(channel.id)}
@@ -7399,9 +8071,22 @@ function App() {
                         <Hash size={15} />
                         <span>{channel.name}</span>
                       </button>
+                        {canDeleteCommunityItem(channel.createdBy) ? (
+                          <div className="community-owner-actions">
+                            <button className="community-edit-button" type="button" aria-label={`Edit ${channel.name}`} onClick={() => editCommunityChannelDescription(channel.id)}>
+                              <Pencil size={13} />
+                            </button>
+                            <button className="community-delete-button" type="button" aria-label={`Delete ${channel.name}`} onClick={() => deleteCommunityChannel(channel.id)}>
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
                     ))
                   ) : (
-                    <div className="profile-empty-card">No channels yet.</div>
+                    <div className="profile-empty-card">
+                      {communityChannels.length > 0 ? "No channels match your search." : "No channels yet."}
+                    </div>
                   )}
                 </div>
 
@@ -7444,6 +8129,16 @@ function App() {
                                 <strong>{message.author}</strong>
                                 <span>{message.role}</span>
                                 <span>{message.time}</span>
+                                {canDeleteCommunityItem(message.authorId) ? (
+                                  <span className="community-owner-actions inline">
+                                    <button className="community-edit-button inline" type="button" aria-label="Edit message" onClick={() => editCommunityMessage(message.id)}>
+                                      <Pencil size={11} />
+                                    </button>
+                                    <button className="community-delete-button inline" type="button" aria-label="Delete message" onClick={() => deleteCommunityMessage(message.id)}>
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </span>
+                                ) : null}
                               </div>
                               <p>{message.text}</p>
                             </div>
