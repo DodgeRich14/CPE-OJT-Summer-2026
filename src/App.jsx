@@ -1928,6 +1928,7 @@ function buildCommunityFromRecords({
   messages = [],
   posts = [],
   reactions = [],
+  commentReactions = [],
   comments = [],
   currentUserId = "",
   previousCommunity = defaultState.community,
@@ -1938,6 +1939,11 @@ function buildCommunityFromRecords({
     return counts;
   }, {});
   const likedPostIds = new Set(reactions.filter((reaction) => reaction.user_id === currentUserId).map((reaction) => reaction.post_id));
+  const commentReactionCounts = commentReactions.reduce((counts, reaction) => {
+    counts[reaction.comment_id] = (counts[reaction.comment_id] ?? 0) + 1;
+    return counts;
+  }, {});
+  const likedCommentIds = new Set(commentReactions.filter((reaction) => reaction.user_id === currentUserId).map((reaction) => reaction.comment_id));
   const commentsByPostId = comments.reduce((grouped, comment) => {
     grouped[comment.post_id] = grouped[comment.post_id] ?? [];
     grouped[comment.post_id].push({
@@ -1948,6 +1954,8 @@ function buildCommunityFromRecords({
       text: comment.body || "",
       time: formatCommunityTime(comment.created_at),
       expiresAt: comment.expires_at || "",
+      likes: commentReactionCounts[comment.id] ?? 0,
+      likedByMe: likedCommentIds.has(comment.id),
     });
     return grouped;
   }, {});
@@ -2357,6 +2365,12 @@ function App() {
       return;
     }
 
+    const commentReactionsResult = await supabase.from("community_comment_reactions").select("*");
+    const commentReactionsUnavailable =
+      commentReactionsResult.error?.message?.includes("community_comment_reactions") ||
+      commentReactionsResult.error?.message?.includes("schema cache") ||
+      commentReactionsResult.error?.code === "42P01";
+
     setState((current) => ({
       ...current,
       community: buildCommunityFromRecords({
@@ -2366,6 +2380,7 @@ function App() {
         messages: messagesResult.data ?? [],
         posts: postsResult.data ?? [],
         reactions: reactionsResult.data ?? [],
+        commentReactions: commentReactionsUnavailable ? [] : (commentReactionsResult.data ?? []),
         comments: commentsResult.data ?? [],
         currentUserId: current.auth.accountId,
         previousCommunity: current.community ?? defaultState.community,
@@ -4991,7 +5006,17 @@ function App() {
                       ...post,
                       comments: [
                         ...(post.comments ?? []),
-                        { id: Date.now(), authorId: state.auth.accountId || "local-user", author: currentCommunityAuthor, role: currentCommunityRole, text, time: "Now", expiresAt: getCommunityExpiryDate() },
+                        {
+                          id: Date.now(),
+                          authorId: state.auth.accountId || "local-user",
+                          author: currentCommunityAuthor,
+                          role: currentCommunityRole,
+                          text,
+                          time: "Now",
+                          expiresAt: getCommunityExpiryDate(),
+                          likes: 0,
+                          likedByMe: false,
+                        },
                       ],
                     }
                   : post,
@@ -5001,6 +5026,56 @@ function App() {
       ),
     }));
     setCommunityCommentDrafts((current) => ({ ...current, [postId]: "" }));
+  }
+
+  async function toggleCommunityCommentReaction(postId, commentId) {
+    const server = activeCommunityServer;
+    const post = server?.posts.find((item) => item.id === postId);
+    const comment = post?.comments.find((item) => item.id === commentId);
+    if (!server || !post || !comment) return;
+
+    if (hasSupabaseConfig && supabase && state.auth.accountId && hasActiveSubscription) {
+      const request = comment.likedByMe
+        ? supabase.from("community_comment_reactions").delete().eq("comment_id", commentId).eq("user_id", state.auth.accountId)
+        : supabase.from("community_comment_reactions").insert({ comment_id: commentId, user_id: state.auth.accountId });
+      const { error } = await request;
+      if (error) {
+        setState((current) => ({
+          ...current,
+          community: { ...(current.community ?? defaultState.community), error: getCommunityErrorMessage(error, "Comment reaction failed") },
+        }));
+        return;
+      }
+      await refreshCommunityFromSupabase();
+      return;
+    }
+
+    updateCommunity((community) => ({
+      ...community,
+      servers: (community.servers ?? []).map((item) =>
+        item.id === server.id
+          ? {
+              ...item,
+              posts: (item.posts ?? []).map((currentPost) =>
+                currentPost.id === postId
+                  ? {
+                      ...currentPost,
+                      comments: (currentPost.comments ?? []).map((currentComment) =>
+                        currentComment.id === commentId
+                          ? {
+                              ...currentComment,
+                              likedByMe: !currentComment.likedByMe,
+                              likes: Math.max(0, (currentComment.likes ?? 0) + (currentComment.likedByMe ? -1 : 1)),
+                            }
+                          : currentComment,
+                      ),
+                    }
+                  : currentPost,
+              ),
+            }
+          : item,
+      ),
+    }));
   }
 
   function canDeleteCommunityItem(ownerId) {
@@ -7792,18 +7867,28 @@ function App() {
                                       <span>{comment.role}</span>
                                       <span>Posted {comment.time}</span>
                                       <span>{comment.expiresAt ? `Expires ${formatCommunityTime(comment.expiresAt)}` : "Expires in 7 days"}</span>
+                                      {canDeleteCommunityItem(comment.authorId) ? (
+                                        <span className="community-owner-actions inline">
+                                          <button className="community-edit-button inline" type="button" aria-label="Edit comment" onClick={() => editCommunityComment(post.id, comment.id)}>
+                                            <Pencil size={11} />
+                                          </button>
+                                          <button className="community-delete-button inline" type="button" aria-label="Delete comment" onClick={() => deleteCommunityComment(post.id, comment.id)}>
+                                            <Trash2 size={12} />
+                                          </button>
+                                        </span>
+                                      ) : null}
                                     </div>
-                                    {canDeleteCommunityItem(comment.authorId) ? (
-                                      <span className="community-owner-actions inline">
-                                        <button className="community-edit-button inline" type="button" aria-label="Edit comment" onClick={() => editCommunityComment(post.id, comment.id)}>
-                                          <Pencil size={11} />
-                                        </button>
-                                        <button className="community-delete-button inline" type="button" aria-label="Delete comment" onClick={() => deleteCommunityComment(post.id, comment.id)}>
-                                          <Trash2 size={12} />
-                                        </button>
-                                      </span>
-                                    ) : null}
                                     <p>{comment.text}</p>
+                                    <div className="community-comment-actions">
+                                      <button
+                                        className={`community-reaction-button compact${comment.likedByMe ? " active" : ""}`}
+                                        type="button"
+                                        onClick={() => toggleCommunityCommentReaction(post.id, comment.id)}
+                                      >
+                                        <Heart size={12} />
+                                        {comment.likes ?? 0}
+                                      </button>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -8171,7 +8256,7 @@ function App() {
       )}
 
       {activePracticeTest && (
-        <div className="profile-overlay job-modal-overlay" onClick={() => setActivePracticeTest(null)}>
+        <div className="profile-overlay job-modal-overlay practice-test-overlay" onClick={() => setActivePracticeTest(null)}>
           <aside className="profile-panel job-modal practice-test-modal" onClick={(event) => event.stopPropagation()}>
             <div className="profile-panel-header">
               <div>
