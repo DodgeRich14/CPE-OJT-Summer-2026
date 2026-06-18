@@ -363,6 +363,136 @@ function formatSalaryMeta(job) {
   return "Salary not listed";
 }
 
+function normalizeExternalUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  try {
+    const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    const url = new URL(withProtocol);
+    return ["http:", "https:"].includes(url.protocol) ? url.toString() : "";
+  } catch {
+    return "";
+  }
+}
+
+const sourceUrlKeys = new Set([
+  "application_url",
+  "apply_url",
+  "applyUrl",
+  "apply_link",
+  "applyLink",
+  "job_apply_link",
+  "job_google_link",
+  "job_link",
+  "source_url",
+  "sourceUrl",
+  "source_link",
+  "sourceLink",
+  "sharing_link",
+  "share_link",
+  "link",
+  "url",
+]);
+
+function findRawSourceUrl(value, depth = 0) {
+  if (!value || depth > 4) return "";
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const resolved = findRawSourceUrl(item, depth + 1);
+      if (resolved) return resolved;
+    }
+    return "";
+  }
+
+  if (typeof value !== "object") return "";
+
+  for (const [key, raw] of Object.entries(value)) {
+    if (sourceUrlKeys.has(key)) {
+      const resolved = normalizeExternalUrl(raw);
+      if (resolved) return resolved;
+    }
+  }
+
+  for (const raw of Object.values(value)) {
+    const resolved = findRawSourceUrl(raw, depth + 1);
+    if (resolved) return resolved;
+  }
+
+  return "";
+}
+
+function buildProviderSourceUrl(job) {
+  const platform = String(job?.source_platform || job?.sourcePlatform || "").toLowerCase();
+  const sourceJobId = String(job?.source_job_id || job?.sourceJobId || "").trim();
+  if (!sourceJobId) return "";
+
+  if (platform.includes("linkedin") && /^\d+$/.test(sourceJobId)) {
+    return `https://www.linkedin.com/jobs/view/${sourceJobId}/`;
+  }
+
+  if (platform.includes("jobstreet")) {
+    return `https://www.jobstreet.com.ph/job/${encodeURIComponent(sourceJobId)}`;
+  }
+
+  if (platform.includes("indeed") && /^[a-z0-9]+$/i.test(sourceJobId)) {
+    return `https://www.indeed.com/viewjob?jk=${encodeURIComponent(sourceJobId)}`;
+  }
+
+  if (platform.includes("ziprecruiter") && /^[a-z0-9-]+$/i.test(sourceJobId)) {
+    return `https://www.ziprecruiter.com/jobs/${encodeURIComponent(sourceJobId)}`;
+  }
+
+  return "";
+}
+
+function buildSourceSearchUrl(job) {
+  const query = [job?.title, job?.company_name || job?.company, job?.source_platform || job?.sourcePlatform, "job"]
+    .filter(Boolean)
+    .join(" ");
+  return query ? `https://www.google.com/search?q=${encodeURIComponent(query)}` : "";
+}
+
+function resolveJobSourceUrl(job) {
+  return (
+    normalizeExternalUrl(job?.application_url) ||
+    normalizeExternalUrl(job?.source_url) ||
+    findRawSourceUrl(job?.raw_payload) ||
+    normalizeExternalUrl(buildProviderSourceUrl(job)) ||
+    normalizeExternalUrl(buildSourceSearchUrl(job))
+  );
+}
+
+function getListingAvailability(job) {
+  const status = String(job?.status || "Open").trim();
+  const expiresAt = job?.expires_at || job?.expiresAt || "";
+  const expiryDate = expiresAt ? new Date(expiresAt) : null;
+  const expired = expiryDate && !Number.isNaN(expiryDate.getTime()) && expiryDate.getTime() < Date.now();
+
+  if (expired) {
+    return {
+      isAvailable: false,
+      label: "Expired",
+      detail: `Expired ${formatRelativeDate(expiresAt)}`,
+    };
+  }
+
+  if (status && !["Open", "Approved"].includes(status)) {
+    return {
+      isAvailable: false,
+      label: status === "Closed" ? "Closed" : status,
+      detail: status === "Closed" ? "No longer listed as open" : `Listing status: ${status}`,
+    };
+  }
+
+  return {
+    isAvailable: true,
+    label: "Open",
+    detail: expiresAt ? `Expires ${formatRelativeDate(expiresAt)}` : "",
+  };
+}
+
 function getDisplayJobDescription(description) {
   const cleaned = String(description || "").trim();
   const meaningfulWords = cleaned.match(/[a-z]{3,}/gi) ?? [];
@@ -2546,7 +2676,7 @@ function App() {
 
     supabase
       .from("applications")
-      .select("job_id,status,applied_at,status_timeline,matched_skills,skill_gaps,match_score,job:jobs(id,title,company_name,category,location,work_type,description,responsibilities,required_skills,posted_at,source_platform,source_url)")
+      .select("job_id,status,applied_at,status_timeline,matched_skills,skill_gaps,match_score,job:jobs(id,title,company_name,category,location,work_type,description,responsibilities,required_skills,posted_at,source_platform,application_url,source_url,source_job_id,raw_payload,status,expires_at)")
       .eq("applicant_id", state.auth.accountId)
       .neq("status", "Withdrawn")
       .order("applied_at", { ascending: true })
@@ -2691,6 +2821,9 @@ function App() {
         const matchedSkills = requirementPartition.matched;
         const skillGaps = requirementPartition.gaps;
 
+        const sourceUrl = resolveJobSourceUrl(job);
+        const availability = getListingAvailability(job);
+
         return {
           id: job.id,
           category: normalizeCategoryForState(job.category),
@@ -2719,7 +2852,11 @@ function App() {
           gaps: skillGaps,
           accent: accentSequence[index % accentSequence.length],
           initial: job.company_name.charAt(0).toUpperCase(),
-          sourceUrl: job.application_url || job.source_url,
+          sourceUrl,
+          sourcePlatform: job.source_platform || "External listing",
+          sourceJobId: job.source_job_id || "",
+          availability,
+          isAvailable: availability.isAvailable,
           aiReason: recommendation?.reason ?? "",
           matchedSkills,
         };
@@ -2920,6 +3057,9 @@ function App() {
               ? job.required_skills
               : extractListingSkills(job.title, job.description, ...(job.responsibilities ?? []));
 
+          const sourceUrl = resolveJobSourceUrl(job);
+          const availability = getListingAvailability(job);
+
           return {
             id: job.id,
             category: normalizeCategoryForState(job.category),
@@ -2941,7 +3081,11 @@ function App() {
             gaps: Array.isArray(persisted?.skill_gaps) ? persisted.skill_gaps : [],
             accent: accentSequence[index % accentSequence.length],
             initial: (job.company_name || "E").charAt(0).toUpperCase(),
-            sourceUrl: job.source_url || "",
+            sourceUrl,
+            sourcePlatform: job.source_platform || "External listing",
+            sourceJobId: job.source_job_id || "",
+            availability,
+            isAvailable: availability.isAvailable,
             aiReason: "",
             matchedSkills: Array.isArray(persisted?.matched_skills) ? persisted.matched_skills : [],
             ...(state.applicationStatusById[jobId] ?? mapApplicationRecordToState(persisted)),
@@ -4094,11 +4238,22 @@ function App() {
     const jobId = typeof jobOrId === "object" ? jobOrId.id : jobOrId;
     const listing = typeof jobOrId === "object" ? jobOrId : listings.find((item) => item.id === jobId);
     const externalUrl = listing?.sourceUrl;
+    const availability = listing?.availability ?? { isAvailable: true, label: "Open" };
     const shouldAnimateModalClose = state.selectedJobId === jobId;
     const optimisticEntry = createApplicationEntry("Applied");
 
     if (!state.auth.isAuthenticated) {
       openAuthModal("signup");
+      return;
+    }
+
+    if (!availability.isAvailable) {
+      setAuthFeedback(`This listing is ${String(availability.label || "unavailable").toLowerCase()} and can no longer be opened for application.`);
+      return;
+    }
+
+    if (!externalUrl) {
+      setAuthFeedback("This listing does not have a source application link yet.");
       return;
     }
 
@@ -4144,8 +4299,13 @@ function App() {
                   responsibilities: listing.sourceResponsibilities ?? listing.responsibilities ?? [],
                   required_skills: listing.requiredSkills ?? [],
                   posted_at: null,
-                  source_platform: "External listing",
+                  source_platform: listing.sourcePlatform || "External listing",
+                  application_url: listing.sourceUrl || "",
                   source_url: listing.sourceUrl || "",
+                  source_job_id: listing.sourceJobId || "",
+                  raw_payload: {},
+                  status: listing.availability?.isAvailable === false ? "Closed" : "Open",
+                  expires_at: null,
                 },
               },
             ]
@@ -6832,6 +6992,7 @@ function App() {
                 {filteredListings.map((listing) => {
                   const isApplied = state.applications.includes(listing.id);
                   const isSaved = state.saved.includes(listing.id);
+                  const canOpenSource = Boolean(listing.sourceUrl && listing.isAvailable !== false);
 
                   return (
                     <article key={listing.id} className="listing-card interactive-card" onClick={() => openJobDetails(listing.id)}>
@@ -6849,21 +7010,24 @@ function App() {
                         <span>Posted {listing.posted}</span>
                         <span>{listing.applicants} applicants</span>
                         <span className="danger">{listing.gaps.length} skill gaps</span>
+                        {listing.isAvailable === false ? <span className="status-badge closed">{listing.availability?.label || "Closed"}</span> : null}
+                        {!listing.sourceUrl ? <span className="status-badge unavailable">No source link</span> : null}
                       </div>
 
                       {listing.aiReason && <p className="listing-ai-reason">{listing.aiReason}</p>}
 
                       <div className="listing-actions">
                         <button
-                          className={`apply-action${isApplied ? " applied" : ""}`}
+                          className={`apply-action${isApplied ? " applied" : ""}${!canOpenSource ? " unavailable" : ""}`}
                           type="button"
+                          disabled={!canOpenSource}
                           onClick={(event) => {
                             event.stopPropagation();
                             applyToJob(listing);
                           }}
                         >
                           <ArrowRight size={14} />
-                          {isApplied ? "Opened Source" : "Apply on Source"}
+                          {!listing.sourceUrl ? "Source Unavailable" : listing.isAvailable === false ? "Listing Closed" : isApplied ? "Opened Source" : "Apply on Source"}
                         </button>
                         <button
                           className={`save-action${isSaved ? " saved" : ""}`}
@@ -9194,6 +9358,8 @@ function App() {
                     <span>{selectedJob.meta}</span>
                     <span>Posted {selectedJob.posted}</span>
                     <span>{selectedJob.applicants} applicants</span>
+                    {selectedJob.isAvailable === false ? <span className="status-badge closed">{selectedJob.availability?.label || "Closed"}</span> : null}
+                    {!selectedJob.sourceUrl ? <span className="status-badge unavailable">No source link</span> : null}
                   </div>
                   <MatchScore listing={selectedJob} theme={state.theme} />
                 </div>
@@ -9268,8 +9434,13 @@ function App() {
                 </div>
 
                 <div className="profile-action-row">
-                  <button className="profile-primary-button" type="button" onClick={() => applyToJob(selectedJob)}>
-                    Apply on Source Site
+                  <button
+                    className="profile-primary-button"
+                    type="button"
+                    disabled={!selectedJob.sourceUrl || selectedJob.isAvailable === false}
+                    onClick={() => applyToJob(selectedJob)}
+                  >
+                    {!selectedJob.sourceUrl ? "Source Link Unavailable" : selectedJob.isAvailable === false ? "Listing Closed" : "Apply on Source Site"}
                   </button>
                   <button
                     className="profile-danger-button"

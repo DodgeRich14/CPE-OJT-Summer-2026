@@ -698,7 +698,7 @@ export async function fetchRecommendedJobs(payload) {
     }
 
     const jobs = await loadOpenJobs(
-      "id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url",
+      "id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, application_url, source_url, source_job_id, raw_payload, status, expires_at",
     );
     return {
       ...computeRecommendationFallback(payload, jobs ?? []),
@@ -709,7 +709,7 @@ export async function fetchRecommendedJobs(payload) {
 
   if (data?.error) {
     const jobs = await loadOpenJobs(
-      "id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, source_url",
+      "id, title, company_name, category, location, work_type, description, responsibilities, required_skills, posted_at, source_platform, application_url, source_url, source_job_id, raw_payload, status, expires_at",
     );
     return {
       ...computeRecommendationFallback(payload, jobs ?? []),

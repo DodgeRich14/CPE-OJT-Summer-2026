@@ -3541,6 +3541,12 @@ select:focus-visible {
   background: rgba(177, 183, 216, 0.12);
 }
 
+.status-badge.closed,
+.status-badge.unavailable {
+  color: var(--pink-strong);
+  background: rgba(255, 92, 130, 0.12);
+}
+
 .application-side {
   display: grid;
   justify-items: end;
@@ -4306,6 +4312,16 @@ select:focus-visible {
   color: #adffe8;
   border-color: rgba(18, 217, 162, 0.24);
   background: rgba(18, 217, 162, 0.12);
+}
+
+.apply-action.unavailable,
+.apply-action:disabled,
+.profile-primary-button:disabled {
+  cursor: not-allowed;
+  color: var(--muted);
+  border-color: rgba(92, 101, 144, 0.18);
+  background: rgba(92, 101, 144, 0.08);
+  opacity: 0.76;
 }
 
 .save-action {
